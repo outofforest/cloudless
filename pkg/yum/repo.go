@@ -19,11 +19,6 @@ import (
 
 const port = 80
 
-// PackageListProvider provides the list of packages required by any host.
-type PackageListProvider interface {
-	Packages() []string
-}
-
 // Service returns new yum repo service.
 func Service(repoRoot string) host.Configurator {
 	var c *host.Configuration

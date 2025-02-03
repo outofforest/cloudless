@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/ridge/must"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -23,7 +23,7 @@ func TestServer(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	s := NewServer(must.NetListener(tnet.ListenOnRandomPort(ctx, tnet.NetworkTCP)), Config{Handler: handler},
+	s := NewServer(lo.Must(tnet.ListenOnRandomPort(ctx, tnet.NetworkTCP)), Config{Handler: handler},
 		Middleware(StandardMiddleware))
 	group.Spawn("server", parallel.Fail, s.Run)
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netlink"
 
 	"github.com/outofforest/cloudless/pkg/host"
@@ -269,6 +270,14 @@ func Service(name string, onExit parallel.OnExit, task parallel.Task) host.Confi
 			OnExit: onExit,
 			TaskFn: task,
 		})
+		return nil
+	}
+}
+
+// Metrics registers prometheus metric gatherers.
+func Metrics(gatherers ...prometheus.Gatherer) host.Configurator {
+	return func(c *host.Configuration) error {
+		c.RegisterMetrics(gatherers...)
 		return nil
 	}
 }

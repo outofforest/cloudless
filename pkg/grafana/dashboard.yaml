@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: 'Static'
+    orgId: 1
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    editable: true
+    options:
+      path: /app/provisioning/dashboards
+      foldersFromFilesStructure: true

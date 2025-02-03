@@ -20,6 +20,7 @@ import (
 	"github.com/cavaliergopher/cpio"
 	"github.com/google/nftables"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 
@@ -137,6 +138,7 @@ func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
 		containerImagesRepo: c.containerImagesRepo,
 	}
 	return c2, func() {
+		c.RegisterMetrics(c2.metricGatherers...)
 		if c2.requireIPForwarding {
 			c.RequireIPForwarding()
 		}
@@ -177,6 +179,7 @@ type Configuration struct {
 	pkgRepo             *packageRepo
 	containerImagesRepo *containerImagesRepo
 	remoteLoggingConfig remote.Config
+	metricGatherers     prometheus.Gatherers
 
 	requireIPForwarding bool
 	requireInitramfs    bool
@@ -204,6 +207,16 @@ func (c *Configuration) IsContainer() bool {
 // RemoteLogging configures remote logging.
 func (c *Configuration) RemoteLogging(lokiURL string) {
 	c.remoteLoggingConfig.URL = lokiURL
+}
+
+// MetricGatherer returns prometheus metric gatherer.
+func (c *Configuration) MetricGatherer() prometheus.Gatherer {
+	return c.topConfig.metricGatherers
+}
+
+// RegisterMetrics registers prometheus metric gatherers.
+func (c *Configuration) RegisterMetrics(gatherers ...prometheus.Gatherer) {
+	c.metricGatherers = append(c.metricGatherers, gatherers...)
 }
 
 // RequireIPForwarding is called if host requires IP forwarding to be enabled.
@@ -246,6 +259,11 @@ func (c *Configuration) ContainerImages() []string {
 // RequireContainers is called to download container images.
 func (c *Configuration) RequireContainers(images ...string) {
 	c.containerImagesRepo.Register(images)
+}
+
+// Hostname returns hostname.
+func (c *Configuration) Hostname() string {
+	return c.hostname
 }
 
 // SetHostname sets hostname.
@@ -319,10 +337,14 @@ type Configurator func(c *Configuration) error
 //
 //nolint:gocyclo
 func Run(ctx context.Context, configurators ...Configurator) error {
+	boxMetrics, boxMetricGatherer := newMetrics()
 	cfg := &Configuration{
 		isContainer:         isContainer(),
 		pkgRepo:             newPackageRepo(),
 		containerImagesRepo: newContainerImagesRepo(),
+		metricGatherers: prometheus.Gatherers{
+			boxMetricGatherer,
+		},
 	}
 	cfg.topConfig = cfg
 
@@ -365,6 +387,8 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 		ctx, sendLogsTask = remote.WithRemote(ctx, cfg.remoteLoggingConfig)
 	}
 	ctx = logger.With(ctx, zap.String("box", cfg.hostname))
+
+	boxMetrics.BoxStarted()
 
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		if sendLogsTask != nil {

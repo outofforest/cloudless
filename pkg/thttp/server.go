@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/ridge/must"
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 
 	"github.com/outofforest/cloudless/pkg/tcontext"
@@ -59,7 +59,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	logger := logger.Get(ctx)
 	errorLog, err := zap.NewStdLogAt(logger, zap.WarnLevel)
-	must.OK(err)
+	lo.Must0(err)
 
 	server := http.Server{
 		Handler:     s.cfg.Handler,

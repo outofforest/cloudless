@@ -3,6 +3,7 @@ package grafana
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/container"
+	"github.com/outofforest/cloudless/pkg/grafana/types"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/host/firewall"
 )
@@ -27,11 +29,15 @@ var (
 	//go:embed datasources.tmpl.yaml
 	datasourceTmpl     string
 	datasourceTemplate = template.Must(template.New("").Parse(datasourceTmpl))
+
+	//go:embed dashboard.yaml
+	dashboard []byte
 )
 
 // Config is the configuration of grafana.
 type Config struct {
 	DataSources []DataSourceConfig
+	Dashboards  []types.Dashboard
 }
 
 // DataSourceConfig is the configuration of data source.
@@ -65,12 +71,12 @@ func Container(appDir string, configurators ...Configurator) host.Configurator {
 		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
 		container.AppMount(appDir),
 		cloudless.Prepare(func(_ context.Context) error {
-			dir := filepath.Join(container.AppDir, "provisioning", "datasources")
-			if err := os.MkdirAll(dir, 0o700); err != nil {
+			dataSourcesDir := filepath.Join(container.AppDir, "provisioning", "datasources")
+			if err := os.MkdirAll(dataSourcesDir, 0o700); err != nil {
 				return errors.WithStack(err)
 			}
 
-			f, err := os.OpenFile(filepath.Join(dir, "datasources.yaml"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+			f, err := os.OpenFile(filepath.Join(dataSourcesDir, "datasources.yaml"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 			if err != nil {
 				return errors.WithStack(err)
 			}
@@ -78,6 +84,20 @@ func Container(appDir string, configurators ...Configurator) host.Configurator {
 
 			if err := datasourceTemplate.Execute(f, config.DataSources); err != nil {
 				return errors.WithStack(err)
+			}
+
+			dashboardsDir := filepath.Join(container.AppDir, "provisioning", "dashboards")
+			if err := os.MkdirAll(dashboardsDir, 0o700); err != nil {
+				return errors.WithStack(err)
+			}
+			if err := os.WriteFile(filepath.Join(dashboardsDir, "dashboard.yaml"), dashboard, 0o400); err != nil {
+				return errors.WithStack(err)
+			}
+
+			for i, d := range config.Dashboards {
+				if err := os.WriteFile(filepath.Join(dashboardsDir, fmt.Sprintf("%d.json", i)), d, 0o400); err != nil {
+					return errors.WithStack(err)
+				}
 			}
 
 			return errors.WithStack(os.MkdirAll(filepath.Join(container.AppDir, "data"), 0o700))
@@ -101,5 +121,12 @@ func DataSource(name string, sourceType DataSourceType, url string) Configurator
 			Type: sourceType,
 			URL:  url,
 		})
+	}
+}
+
+// Dashboard adds dashboard to grafana.
+func Dashboard(dashboard types.Dashboard) Configurator {
+	return func(config *Config) {
+		config.Dashboards = append(config.Dashboards, dashboard)
 	}
 }

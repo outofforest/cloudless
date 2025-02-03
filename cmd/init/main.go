@@ -9,7 +9,9 @@ import (
 	"github.com/outofforest/cloudless/pkg/container"
 	containercache "github.com/outofforest/cloudless/pkg/container/cache"
 	"github.com/outofforest/cloudless/pkg/dns"
+	"github.com/outofforest/cloudless/pkg/eye"
 	"github.com/outofforest/cloudless/pkg/grafana"
+	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/cloudless/pkg/loki"
 	"github.com/outofforest/cloudless/pkg/ntp"
@@ -39,7 +41,8 @@ var (
 var deployment = Deployment(
 	ImmediateKernelModules(DefaultKernelModules...),
 	DNS(DefaultDNS...),
-	RemoteLogging("http://10.0.0.155:3001"),
+	eye.Service("http://10.0.0.155:3001"),
+	RemoteLogging("http://10.0.0.155:3002"),
 	Host("pxe",
 		Gateway("10.0.0.1"),
 		Network("00:01:0a:00:00:05", "10.0.0.100/24", "fe80::1/10"),
@@ -71,8 +74,11 @@ var deployment = Deployment(
 			// Grafana.
 			firewall.RedirectV4TCPPort("10.0.0.155", 3000, "10.0.1.2/24", 3000),
 
-			// Loki.
+			// Prometheus.
 			firewall.RedirectV4TCPPort("10.0.0.155", 3001, "10.0.1.2/24", 3001),
+
+			// Loki.
+			firewall.RedirectV4TCPPort("10.0.0.155", 3002, "10.0.1.2/24", 3002),
 		),
 		vnet.NAT("internal", "52:54:00:6d:94:c0", vnet.IP4("10.0.1.1/24")),
 		vm.New("vm", 5, 4, vm.Network("internal", "00:01:0a:00:02:05")),
@@ -84,8 +90,11 @@ var deployment = Deployment(
 			// Grafana.
 			firewall.RedirectV4TCPPort("10.0.1.2", 3000, "10.0.2.2/24", grafana.Port),
 
+			// Prometheus.
+			firewall.RedirectV4TCPPort("10.0.1.2", 3001, "10.0.2.3/24", prometheus.Port),
+
 			// Loki.
-			firewall.RedirectV4TCPPort("10.0.1.2", 3001, "10.0.2.4/24", loki.Port),
+			firewall.RedirectV4TCPPort("10.0.1.2", 3002, "10.0.2.4/24", loki.Port),
 		),
 		cnet.NAT("monitoring", cnet.IP4("10.0.2.1/24")),
 		container.New("grafana", "/tmp/containers/grafana",
@@ -101,6 +110,7 @@ var deployment = Deployment(
 		grafana.Container("/tmp/app/grafana",
 			grafana.DataSource("Prometheus", grafana.DataSourcePrometheus, "http://10.0.2.3:"+strconv.Itoa(prometheus.Port)),
 			grafana.DataSource("Loki", grafana.DataSourceLoki, "http://10.0.2.4:"+strconv.Itoa(loki.Port)),
+			grafana.Dashboard(host.DashboardBoxes),
 		),
 	),
 	Container("prometheus",
