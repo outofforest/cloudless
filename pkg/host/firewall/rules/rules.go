@@ -87,6 +87,18 @@ func IncomingInterface(iface string) []expr.Any {
 	}
 }
 
+// NotIncomingInterface filters all interfaces except incoming interface.
+func NotIncomingInterface(iface string) []expr.Any {
+	return []expr.Any{
+		&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
+		&expr.Cmp{
+			Op:       expr.CmpOpNeq,
+			Register: 1,
+			Data:     []byte(iface + "\x00"),
+		},
+	}
+}
+
 // OutgoingInterface filters outgoing interface.
 func OutgoingInterface(iface string) []expr.Any {
 	return []expr.Any{

@@ -1,17 +1,25 @@
 package firewall
 
 import (
+	"net"
+
 	"github.com/google/nftables"
+	"github.com/pkg/errors"
+	"github.com/vishvananda/netlink"
 
 	"github.com/outofforest/cloudless/pkg/host/firewall/rules"
 	"github.com/outofforest/cloudless/pkg/parse"
 )
 
 // RedirectV4TCPPort redirects TCPv4 port.
-func RedirectV4TCPPort(externalIP string, externalPort uint16, internalIPNet string, internalPort uint16) RuleSource {
+func RedirectV4TCPPort(externalIP string, externalPort uint16, internalIP string, internalPort uint16) RuleSource {
 	externalIPParsed := parse.IP4(externalIP)
-	internalIPNetParsed := parse.IPNet4(internalIPNet)
+	internalIPParsed := parse.IP4(internalIP)
 	return func(chains Chains) ([]*nftables.Rule, error) {
+		iface, err := findInterfaceByIP(externalIPParsed)
+		if err != nil {
+			return nil, err
+		}
 		return []*nftables.Rule{
 			// Redirecting requests from the host machine.
 			{
@@ -20,17 +28,17 @@ func RedirectV4TCPPort(externalIP string, externalPort uint16, internalIPNet str
 					rules.Protocol("tcp"),
 					rules.DestinationAddress(externalIPParsed),
 					rules.DestinationPort(externalPort),
-					rules.DestinationNAT(internalIPNetParsed.IP, internalPort),
+					rules.DestinationNAT(internalIPParsed, internalPort),
 				),
 			},
 
-			// Redirecting requests from other hosts in the internal network.
+			// Redirecting requests coming from other interfaces.
 			{
 				Chain: chains.V4NATPostrouting,
 				Exprs: rules.Expressions(
 					rules.Protocol("tcp"),
-					rules.SourceNetwork(&internalIPNetParsed),
-					rules.DestinationAddress(internalIPNetParsed.IP),
+					rules.NotIncomingInterface(iface),
+					rules.DestinationAddress(internalIPParsed),
 					rules.DestinationPort(internalPort),
 					rules.Masquerade(),
 				),
@@ -43,7 +51,7 @@ func RedirectV4TCPPort(externalIP string, externalPort uint16, internalIPNet str
 					rules.Protocol("tcp"),
 					rules.DestinationAddress(externalIPParsed),
 					rules.DestinationPort(externalPort),
-					rules.DestinationNAT(internalIPNetParsed.IP, internalPort),
+					rules.DestinationNAT(internalIPParsed, internalPort),
 				),
 			},
 		}, nil
@@ -68,4 +76,25 @@ func RedirectV4UDPPort(externalIP string, externalPort uint16, internalIP string
 			},
 		}, nil
 	}
+}
+
+func findInterfaceByIP(ip net.IP) (string, error) {
+	links, err := netlink.LinkList()
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+
+	for _, l := range links {
+		addrs, err := netlink.AddrList(l, netlink.FAMILY_V4)
+		if err != nil {
+			return "", errors.WithStack(err)
+		}
+		for _, addr := range addrs {
+			if addr.IP.Equal(ip) {
+				return l.Attrs().Name, nil
+			}
+		}
+	}
+
+	return "", errors.Errorf("no link for address %q", ip)
 }

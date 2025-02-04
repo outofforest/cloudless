@@ -8,5 +8,5 @@ providers:
     allowUiUpdates: false
     editable: true
     options:
-      path: /app/provisioning/dashboards
+      path: /cloudless/provisioning/dashboards
       foldersFromFilesStructure: true

@@ -11,7 +11,7 @@ common:
     kvstore:
       store: inmemory
   replication_factor: 1
-  path_prefix: /app
+  path_prefix: /cloudless
 
 schema_config:
   configs:
@@ -25,10 +25,10 @@ schema_config:
 
 storage_config:
   filesystem:
-    directory: /app/chunks
+    directory: /cloudless/chunks
   tsdb_shipper:
-    active_index_directory: /app/tsdb/index
-    cache_location: /app/tsdb/index_cache
+    active_index_directory: /cloudless/tsdb/index
+    cache_location: /cloudless/tsdb/index_cache
 
 analytics:
   reporting_enabled: false
@@ -38,7 +38,7 @@ limits_config:
   discover_service_name: []
 
 compactor:
-  working_directory: /app/compactor
+  working_directory: /cloudless/compactor
   compaction_interval: 10m
   retention_enabled: true
   retention_delete_delay: 2h
