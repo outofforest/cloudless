@@ -21,7 +21,13 @@ func RedirectV4UDPPort(externalIP string, externalPort uint16, internalIP string
 	return redirectV4Port("udp", externalIP, externalPort, internalIP, internalPort)
 }
 
-func redirectV4Port(proto string, externalIP string, externalPort uint16, internalIP string, internalPort uint16) RuleSource {
+func redirectV4Port(
+	proto string,
+	externalIP string,
+	externalPort uint16,
+	internalIP string,
+	internalPort uint16,
+) RuleSource {
 	externalIPParsed := parse.IP4(externalIP)
 	internalIPParsed := parse.IP4(internalIP)
 	return func(chains Chains) ([]*nftables.Rule, error) {
