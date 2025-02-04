@@ -63,12 +63,39 @@ func RedirectV4UDPPort(externalIP string, externalPort uint16, internalIP string
 	externalIPParsed := parse.IP4(externalIP)
 	internalIPParsed := parse.IP4(internalIP)
 	return func(chains Chains) ([]*nftables.Rule, error) {
+		iface, err := findInterfaceByIP(externalIPParsed)
+		if err != nil {
+			return nil, err
+		}
 		return []*nftables.Rule{
+			// Redirecting requests from the host machine.
+			{
+				Chain: chains.V4NATOutput,
+				Exprs: rules.Expressions(
+					rules.Protocol("udp"),
+					rules.DestinationAddress(externalIPParsed),
+					rules.DestinationPort(externalPort),
+					rules.DestinationNAT(internalIPParsed, internalPort),
+				),
+			},
+
+			// Redirecting requests coming from other interfaces.
+			{
+				Chain: chains.V4NATPostrouting,
+				Exprs: rules.Expressions(
+					rules.Protocol("udp"),
+					rules.NotIncomingInterface(iface),
+					rules.DestinationAddress(internalIPParsed),
+					rules.DestinationPort(internalPort),
+					rules.Masquerade(),
+				),
+			},
+
+			// Redirecting external requests.
 			{
 				Chain: chains.V4NATPrerouting,
 				Exprs: rules.Expressions(
 					rules.Protocol("udp"),
-					rules.LocalDestinationAddress(),
 					rules.DestinationAddress(externalIPParsed),
 					rules.DestinationPort(externalPort),
 					rules.DestinationNAT(internalIPParsed, internalPort),
