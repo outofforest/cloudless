@@ -15,6 +15,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/cloudless/pkg/loki"
 	"github.com/outofforest/cloudless/pkg/ntp"
+	"github.com/outofforest/cloudless/pkg/pebble"
 	"github.com/outofforest/cloudless/pkg/prometheus"
 	"github.com/outofforest/cloudless/pkg/pxe"
 	"github.com/outofforest/cloudless/pkg/ssh"
@@ -49,6 +50,20 @@ var deployment = Deployment(
 		pxe.Service("/dev/sda"),
 		yum.Service("/tmp/repo-fedora"),
 		containercache.Service("/tmp/repo-containers"),
+	),
+	Host("server",
+		Gateway("10.0.0.1"),
+		Network("00:01:0a:00:00:9b", "10.0.0.155/24"),
+		Firewall(
+			// Grafana.
+			firewall.RedirectV4TCPPort("10.0.0.155", 3000, "10.0.1.2", 3000),
+
+			// Prometheus.
+			firewall.RedirectV4TCPPort("10.0.0.155", 3001, "10.0.1.2", 3001),
+
+			// Loki.
+			firewall.RedirectV4TCPPort("10.0.0.155", 3002, "10.0.1.2", 3002),
+		),
 		dns.Service(
 			dns.ForwardTo("1.1.1.1", "8.8.8.8"),
 			dns.ForwardFor("10.0.0.0/24"),
@@ -66,35 +81,29 @@ var deployment = Deployment(
 				dns.MailExchange("mail2.exw.co", 20),
 			),
 		),
-	),
-	Host("demo",
-		Gateway("10.0.0.1"),
-		Network("00:01:0a:00:00:9b", "10.0.0.155/24"),
-		Firewall(
-			// Grafana.
-			firewall.RedirectV4TCPPort("10.0.0.155", 3000, "10.0.1.2/24", 3000),
-
-			// Prometheus.
-			firewall.RedirectV4TCPPort("10.0.0.155", 3001, "10.0.1.2/24", 3001),
-
-			// Loki.
-			firewall.RedirectV4TCPPort("10.0.0.155", 3002, "10.0.1.2/24", 3002),
-		),
+		cnet.NAT("acme", cnet.IP4("10.0.2.1/24")),
+		container.New("pebble", "/tmp/containers/pebble",
+			container.Network("acme", "52:54:00:6e:94:c3")),
 		vnet.NAT("internal", "52:54:00:6d:94:c0", vnet.IP4("10.0.1.1/24")),
 		vm.New("vm", 5, 4, vm.Network("internal", "00:01:0a:00:02:05")),
+	),
+	Container("pebble",
+		Gateway("10.0.2.1"),
+		Network("52:54:00:6e:94:c3", "10.0.2.5/24"),
+		pebble.Container("/tmp/app/pebble", "10.0.0.155"),
 	),
 	Host("vm",
 		Gateway("10.0.1.1"),
 		Network("00:01:0a:00:02:05", "10.0.1.2/24"),
 		Firewall(
 			// Grafana.
-			firewall.RedirectV4TCPPort("10.0.1.2", 3000, "10.0.2.2/24", grafana.Port),
+			firewall.RedirectV4TCPPort("10.0.1.2", 3000, "10.0.2.2", grafana.Port),
 
 			// Prometheus.
-			firewall.RedirectV4TCPPort("10.0.1.2", 3001, "10.0.2.3/24", prometheus.Port),
+			firewall.RedirectV4TCPPort("10.0.1.2", 3001, "10.0.2.3", prometheus.Port),
 
 			// Loki.
-			firewall.RedirectV4TCPPort("10.0.1.2", 3002, "10.0.2.4/24", loki.Port),
+			firewall.RedirectV4TCPPort("10.0.1.2", 3002, "10.0.2.4", loki.Port),
 		),
 		cnet.NAT("monitoring", cnet.IP4("10.0.2.1/24")),
 		container.New("grafana", "/tmp/containers/grafana",

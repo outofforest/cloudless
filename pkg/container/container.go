@@ -21,6 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
+	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 
 	"github.com/outofforest/cloudless"
@@ -35,7 +36,7 @@ import (
 )
 
 // AppDir is the path inside container where application's directory is mounted.
-const AppDir = "/app"
+const AppDir = "/cloudless"
 
 var protectedFiles = map[string]struct{}{
 	"/etc/resolv.conf": {},
@@ -182,14 +183,24 @@ func RunImage(imageTag string, configurators ...RunImageConfigurator) host.Confi
 			}
 
 			log := logger.Get(ctx)
-			return libexec.Exec(ctx, &exec.Cmd{
-				Path:   args[0],
-				Args:   args,
-				Env:    envVars,
-				Dir:    config.WorkingDir,
-				Stdout: newStreamLogger(log),
-				Stderr: newStreamLogger(log),
-			})
+			stdoutLogger := newStreamLogger(log)
+			stderrLogger := newStreamLogger(log)
+			for {
+				err := libexec.Exec(ctx, &exec.Cmd{
+					Path:   args[0],
+					Args:   args,
+					Env:    envVars,
+					Dir:    config.WorkingDir,
+					Stdout: stdoutLogger,
+					Stderr: stderrLogger,
+				})
+				if ctx.Err() != nil {
+					return errors.WithStack(ctx.Err())
+				}
+				if err != nil {
+					log.Error("Container failed", zap.Error(err))
+				}
+			}
 		}),
 	)
 }

@@ -40,7 +40,7 @@ func NAT(name string, configurators ...Configurator) host.Configurator {
 			firewall.Masquerade(config.BridgeName),
 		),
 		cloudless.EnableIPForwarding(),
-		cloudless.Prepare(func(ctx context.Context) error {
+		cloudless.Prepare(func(_ context.Context) error {
 			return createBridge(config)
 		}),
 	)
