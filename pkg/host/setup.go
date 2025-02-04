@@ -172,13 +172,17 @@ type mountConfig struct {
 	Writable bool
 }
 
+type logLabels struct {
+	Box string `json:"box"`
+}
+
 // Configuration allows service to configure the required host settings.
 type Configuration struct {
 	isContainer         bool
 	topConfig           *Configuration
 	pkgRepo             *packageRepo
 	containerImagesRepo *containerImagesRepo
-	remoteLoggingConfig remote.Config
+	remoteLoggingConfig remote.Config[logLabels]
 	metricGatherers     prometheus.Gatherers
 
 	requireIPForwarding bool
