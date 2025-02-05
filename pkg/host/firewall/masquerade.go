@@ -17,6 +17,23 @@ func Masquerade(iface string) RuleSource {
 
 		return []*nftables.Rule{
 			{
+				Chain: chains.V4FilterForward,
+				Exprs: rules.Expressions(
+					rules.IncomingInterface(iface),
+					rules.OutgoingInterface(defaultIface),
+					rules.Accept(),
+				),
+			},
+			{
+				Chain: chains.V4FilterForward,
+				Exprs: rules.Expressions(
+					rules.IncomingInterface(defaultIface),
+					rules.OutgoingInterface(iface),
+					rules.ConnectionEstablished(),
+					rules.Accept(),
+				),
+			},
+			{
 				Chain: chains.V4NATPostrouting,
 				Exprs: rules.Expressions(
 					rules.IncomingInterface(iface),

@@ -36,6 +36,27 @@ func redirectV4Port(
 			return nil, err
 		}
 		return []*nftables.Rule{
+			// Enable port forwarding.
+			{
+				Chain: chains.V4FilterForward,
+				Exprs: rules.Expressions(
+					rules.Protocol(proto),
+					rules.DestinationAddress(internalIPParsed),
+					rules.DestinationPort(internalPort),
+					rules.Accept(),
+				),
+			},
+			{
+				Chain: chains.V4FilterForward,
+				Exprs: rules.Expressions(
+					rules.Protocol(proto),
+					rules.ConnectionEstablished(),
+					rules.SourceAddress(internalIPParsed),
+					rules.SourcePort(internalPort),
+					rules.Accept(),
+				),
+			},
+
 			// Redirecting requests from the host machine.
 			{
 				Chain: chains.V4NATOutput,

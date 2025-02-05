@@ -192,6 +192,27 @@ func NotSourceAddress(ip net.IP) []expr.Any {
 	}
 }
 
+// SourceAddress filters source address.
+func SourceAddress(ip net.IP) []expr.Any {
+	if ip.Equal(net.IPv4zero) {
+		return nil
+	}
+
+	return []expr.Any{
+		&expr.Payload{
+			DestRegister: 1,
+			Base:         expr.PayloadBaseNetworkHeader,
+			Offset:       12,
+			Len:          4,
+		},
+		&expr.Cmp{
+			Op:       expr.CmpOpEq,
+			Register: 1,
+			Data:     ip.To4(),
+		},
+	}
+}
+
 // DestinationAddress filters destination address.
 func DestinationAddress(ip net.IP) []expr.Any {
 	if ip.Equal(net.IPv4zero) {
@@ -235,6 +256,23 @@ func Protocol(protocol string) []expr.Any {
 			Op:       expr.CmpOpEq,
 			Register: 1,
 			Data:     []byte{proto},
+		},
+	}
+}
+
+// SourcePort filters source port.
+func SourcePort(port uint16) []expr.Any {
+	return []expr.Any{
+		&expr.Payload{
+			DestRegister: 1,
+			Base:         expr.PayloadBaseTransportHeader,
+			Offset:       0,
+			Len:          2,
+		},
+		&expr.Cmp{
+			Op:       expr.CmpOpEq,
+			Register: 1,
+			Data:     binaryutil.BigEndian.PutUint16(port),
 		},
 	}
 }
