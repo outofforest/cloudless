@@ -119,7 +119,7 @@ var deployment = Deployment(
 		grafana.Container("/tmp/app/grafana",
 			grafana.DataSource("Prometheus", grafana.DataSourcePrometheus, "http://10.0.2.3:"+strconv.Itoa(prometheus.Port)),
 			grafana.DataSource("Loki", grafana.DataSourceLoki, "http://10.0.2.4:"+strconv.Itoa(loki.Port)),
-			grafana.Dashboard(host.DashboardBoxes),
+			grafana.Dashboards(host.DashboardBoxes),
 		),
 	),
 	Container("prometheus",
