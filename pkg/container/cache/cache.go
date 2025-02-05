@@ -28,7 +28,8 @@ import (
 	"github.com/outofforest/parallel"
 )
 
-const port = 81
+// Port is the port cache listens on.
+const Port = 81
 
 var (
 	manifestMediaTypes = map[string]struct{}{
@@ -52,7 +53,7 @@ func Service(repoRoot string) host.Configurator {
 	var c *host.Configuration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
-		cloudless.Firewall(firewall.OpenV4TCPPort(port)),
+		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
 		cloudless.Service("containercache", parallel.Continue, func(ctx context.Context) error {
 			images := c.ContainerImages()
 			if len(images) == 0 {
@@ -102,7 +103,7 @@ func run(ctx context.Context, repoRoot string, images []string) error {
 		}
 	}
 
-	l, err := net.ListenTCP("tcp", &net.TCPAddr{Port: port})
+	l, err := net.ListenTCP("tcp", &net.TCPAddr{Port: Port})
 	if err != nil {
 		return errors.WithStack(err)
 	}

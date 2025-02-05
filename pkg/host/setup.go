@@ -509,6 +509,13 @@ func configureDNS(dns []net.IP) error {
 		return errors.WithStack(err)
 	}
 
+	if err := os.WriteFile("/etc/hosts",
+		[]byte(`127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
+`), 0o644); err != nil {
+		return errors.WithStack(err)
+	}
+
 	f, err := os.OpenFile("/etc/resolv.conf", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return errors.WithStack(err)

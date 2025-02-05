@@ -92,6 +92,16 @@ func Join(configurators ...host.Configurator) host.Configurator {
 	}
 }
 
+// If combines configurators if condition is true.
+func If(condition bool, configurators ...host.Configurator) host.Configurator {
+	if !condition {
+		return func(c *host.Configuration) error {
+			return nil
+		}
+	}
+	return Join(configurators...)
+}
+
 // Configuration provides host configuration.
 func Configuration(cfg **host.Configuration) host.Configurator {
 	return func(c *host.Configuration) error {
