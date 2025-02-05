@@ -124,9 +124,9 @@ func DataSource(name string, sourceType DataSourceType, url string) Configurator
 	}
 }
 
-// Dashboard adds dashboard to grafana.
-func Dashboard(dashboard types.Dashboard) Configurator {
+// Dashboards adds dashboards to grafana.
+func Dashboards(dashboards ...types.Dashboard) Configurator {
 	return func(config *Config) {
-		config.Dashboards = append(config.Dashboards, dashboard)
+		config.Dashboards = append(config.Dashboards, dashboards...)
 	}
 }
