@@ -18,6 +18,8 @@ require (
 	github.com/outofforest/logger v0.6.0
 	github.com/outofforest/mass v0.2.1
 	github.com/outofforest/parallel v0.2.3
+	github.com/outofforest/proton v0.7.5
+	github.com/outofforest/resonance v0.7.2
 	github.com/outofforest/run v0.8.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.20.5
@@ -30,7 +32,7 @@ require (
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.32.0
 	golang.org/x/net v0.34.0
-	golang.org/x/sys v0.29.0
+	golang.org/x/sys v0.30.0
 )
 
 require (
@@ -70,6 +72,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/outofforest/ioc/v2 v2.5.2 // indirect
+	github.com/outofforest/spin v0.3.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/xattr v0.4.10 // indirect

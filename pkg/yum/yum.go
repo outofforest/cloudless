@@ -17,14 +17,15 @@ import (
 	"github.com/outofforest/parallel"
 )
 
-const port = 80
+// Port is the port yum listens on.
+const Port = 80
 
 // Service returns new yum repo service.
 func Service(repoRoot string) host.Configurator {
 	var c *host.Configuration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
-		cloudless.Firewall(firewall.OpenV4TCPPort(port)),
+		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
 		cloudless.Service("yum", parallel.Continue, func(ctx context.Context) error {
 			packages := c.Packages()
 			if len(packages) == 0 {
@@ -45,7 +46,7 @@ func Service(repoRoot string) host.Configurator {
 				return errors.WithStack(err)
 			}
 
-			l, err := net.ListenTCP("tcp", &net.TCPAddr{Port: port})
+			l, err := net.ListenTCP("tcp", &net.TCPAddr{Port: Port})
 			if err != nil {
 				return errors.WithStack(err)
 			}

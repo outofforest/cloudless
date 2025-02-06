@@ -40,6 +40,7 @@ const AppDir = "/cloudless"
 
 var protectedFiles = map[string]struct{}{
 	"/etc/resolv.conf": {},
+	"/etc/hosts":       {},
 }
 
 // Config represents container configuration.

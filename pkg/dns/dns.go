@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/outofforest/cloudless"
+	"github.com/outofforest/cloudless/pkg/dns/acme"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/logger"
@@ -18,7 +19,9 @@ import (
 )
 
 const (
-	port              = 53
+	// Port is the port DNS listens on.
+	Port = 53
+
 	bufferSize        = 1500
 	maxMsgLength      = 512
 	headerSize        = 12
@@ -53,17 +56,23 @@ func Service(configurators ...Configurator) host.Configurator {
 	}
 
 	return cloudless.Join(
-		cloudless.Firewall(firewall.OpenV4UDPPort(port)),
+		cloudless.Firewall(firewall.OpenV4UDPPort(Port)),
 		cloudless.Service("dns", parallel.Fail, func(ctx context.Context) error {
 			return run(ctx, config)
 		}),
+		cloudless.If(config.EnableACME, cloudless.Firewall(firewall.OpenV4TCPPort(acme.Port))),
 	)
 }
 
 func run(ctx context.Context, config Config) error {
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+		var acmeServer *acme.Server
 		var forwardCh chan forwardRequest
 
+		if config.EnableACME {
+			acmeServer = acme.NewServer()
+			spawn("acme", parallel.Fail, acmeServer.Run)
+		}
 		if len(config.ForwardFor) > 0 && len(config.ForwardTo) > 0 {
 			forwardCh = make(chan forwardRequest, forwardChCapacity)
 
@@ -77,7 +86,7 @@ func run(ctx context.Context, config Config) error {
 			}
 
 			for {
-				if err := runResolver(ctx, config, forwardCh); err != nil {
+				if err := runResolver(ctx, config, forwardCh, acmeServer); err != nil {
 					if errors.Is(err, ctx.Err()) {
 						return err
 					}
@@ -91,10 +100,10 @@ func run(ctx context.Context, config Config) error {
 }
 
 //nolint:gocyclo
-func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardRequest) error {
+func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardRequest, acmeServer *acme.Server) error {
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{
 		IP:   net.IPv4zero,
-		Port: port,
+		Port: Port,
 	})
 	if err != nil {
 		return errors.WithStack(err)
@@ -153,9 +162,12 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 					}
 					continue
 				}
+
+				b := putQuery(q, buff[headerSize:headerSize], &h)
+
 				if q.QClass != classInternet {
 					h.RCode = rCodeNotImplemented
-					if err := sendError(h, addr, conn, buff); err != nil {
+					if err := sendError(h, addr, conn, b); err != nil {
 						return err
 					}
 					continue
@@ -186,7 +198,7 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 						}
 						if successCount == 0 {
 							h.RCode = rCodeServerFailure
-							if err := sendError(h, addr, conn, buff); err != nil {
+							if err := sendError(h, addr, conn, b); err != nil {
 								return err
 							}
 						}
@@ -194,7 +206,7 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 					}
 
 					h.RCode = rCodeRefused
-					if err := sendError(h, addr, conn, buff); err != nil {
+					if err := sendError(h, addr, conn, b); err != nil {
 						return err
 					}
 
@@ -202,14 +214,14 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 				}
 
 				queryID++
-				sb := resolve(q, zConfig, buff[headerSize:headerSize], queryID, &h)
+				b = resolve(q, zConfig, b, queryID, acmeServer, &h)
 
 				putHeader(h, buff[:0])
 
 				if h.RCode != rCodeOK {
-					sb = nil
+					b = nil
 				}
-				if _, err := conn.WriteTo(buff[:headerSize+len(sb)], addr); err != nil {
+				if _, err := conn.WriteTo(buff[:headerSize+len(b)], addr); err != nil {
 					return err
 				}
 			}
@@ -244,7 +256,8 @@ func sendError(h header, addr net.Addr, conn *net.UDPConn, b []byte) error {
 	return errors.WithStack(err)
 }
 
-func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, h *header) []byte {
+//nolint:gocyclo
+func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *acme.Server, h *header) []byte {
 	switch q.QType {
 	case typeSOA:
 		if q.QName != zConfig.Domain {
@@ -377,10 +390,14 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, h *header) [
 		}
 	case typeTXT:
 		values := zConfig.Texts[q.QName]
+		if len(values) == 0 && acmeServer != nil && strings.HasPrefix(q.QName, acme.DomainPrefix) {
+			values = acmeServer.Query(strings.TrimPrefix(q.QName, acme.DomainPrefix))
+		}
 		if len(values) == 0 {
 			h.RCode = rCodeNameError
 			return b
 		}
+
 		var length uint16
 		for _, v := range values {
 			length += uint16(len(v)) + 1
@@ -401,7 +418,6 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, h *header) [
 		}
 	default:
 		h.RCode = rCodeNotImplemented
-		return b
 	}
 
 	return b
@@ -511,6 +527,19 @@ func putHeader(h header, b []byte) {
 	b = binary.BigEndian.AppendUint16(b, h.ANCount)
 	b = binary.BigEndian.AppendUint16(b, h.NSCount)
 	binary.BigEndian.AppendUint16(b, h.ARCount)
+}
+
+func putQuery(q query, b []byte, h *header) []byte {
+	length := uint16(len(b)) + nameLen(q.QName) + 4
+	if length > maxMsgLength {
+		h.TC = true
+		return nil
+	}
+
+	h.QDCount = 1
+	b = putName(q.QName, b)
+	b = binary.BigEndian.AppendUint16(b, q.QType)
+	return binary.BigEndian.AppendUint16(b, q.QClass)
 }
 
 func putRecord(r rRecord, b []byte, h *header) []byte {

@@ -11,6 +11,7 @@ type Config struct {
 	Zones      map[string]ZoneConfig
 	ForwardTo  []net.IP
 	ForwardFor []net.IPNet
+	EnableACME bool
 }
 
 // ZoneConfig stores dns zone configuration.
@@ -137,5 +138,12 @@ func ForwardFor(networks ...string) Configurator {
 	}
 	return func(c *Config) {
 		c.ForwardFor = append(c.ForwardFor, parsedNetworks...)
+	}
+}
+
+// ACME enables service required to authenticate ACME certificate requests.
+func ACME() Configurator {
+	return func(c *Config) {
+		c.EnableACME = true
 	}
 }

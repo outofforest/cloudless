@@ -1,14 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"strconv"
 
 	. "github.com/outofforest/cloudless" //nolint:stylecheck
+	"github.com/outofforest/cloudless/pkg/acme"
 	"github.com/outofforest/cloudless/pkg/acpi"
 	"github.com/outofforest/cloudless/pkg/cnet"
 	"github.com/outofforest/cloudless/pkg/container"
 	containercache "github.com/outofforest/cloudless/pkg/container/cache"
 	"github.com/outofforest/cloudless/pkg/dns"
+	dnsacme "github.com/outofforest/cloudless/pkg/dns/acme"
 	"github.com/outofforest/cloudless/pkg/eye"
 	"github.com/outofforest/cloudless/pkg/grafana"
 	"github.com/outofforest/cloudless/pkg/host"
@@ -55,6 +58,9 @@ var deployment = Deployment(
 		Gateway("10.0.0.1"),
 		Network("00:01:0a:00:00:9b", "10.0.0.155/24"),
 		Firewall(
+			// Pebble.
+			firewall.RedirectV4TCPPort("10.0.0.155", pebble.Port, "10.0.2.5", pebble.Port),
+
 			// Grafana.
 			firewall.RedirectV4TCPPort("10.0.0.155", 3000, "10.0.1.2", 3000),
 
@@ -67,6 +73,7 @@ var deployment = Deployment(
 		dns.Service(
 			dns.ForwardTo("1.1.1.1", "8.8.8.8"),
 			dns.ForwardFor("10.0.0.0/24"),
+			dns.ACME(),
 			dns.Zone("exw.co", "ns1.exw.co", "wojtek@exw.co", 1,
 				dns.Nameservers("ns1.exw.co", "ns2.exw.co"),
 				dns.Domain("ns1.exw.co", "127.0.0.1"),
@@ -81,6 +88,7 @@ var deployment = Deployment(
 				dns.MailExchange("mail2.exw.co", 20),
 			),
 		),
+		acme.Service(fmt.Sprintf("10.0.0.155:%d", dnsacme.Port), "exw.co", "alias.exw.co"),
 		cnet.NAT("acme", cnet.IP4("10.0.2.1/24")),
 		container.New("pebble", "/tmp/containers/pebble",
 			container.Network("acme", "52:54:00:6e:94:c3")),
@@ -90,7 +98,7 @@ var deployment = Deployment(
 	Container("pebble",
 		Gateway("10.0.2.1"),
 		Network("52:54:00:6e:94:c3", "10.0.2.5/24"),
-		pebble.Container("/tmp/app/pebble", "10.0.0.155"),
+		pebble.Container("/tmp/app/pebble", "10.0.2.1:53"),
 	),
 	Host("vm",
 		Gateway("10.0.1.1"),
