@@ -186,6 +186,7 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 					continue
 				}
 
+				q.QName = strings.ToLower(q.QName)
 				zConfig, ok := zone(q.QName, config.Zones)
 				//nolint:nestif
 				if !ok {
@@ -429,8 +430,6 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 			b = append(b, uint8(len(v)))
 			b = append(b, v...)
 		}
-	default:
-		h.RCode = rCodeNotImplemented
 	}
 
 	return b

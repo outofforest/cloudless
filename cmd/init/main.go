@@ -71,7 +71,7 @@ var deployment = Deployment(
 			// Loki.
 			firewall.RedirectV4TCPPort("10.0.0.155", 3002, "10.0.1.2", 3002),
 		),
-		acme.Service(acme.Pebble("10.0.2.5"), dnsacme.Address("10.0.3.2"), "dev.onem.network"),
+		acme.Service(acme.LetsEncryptStaging, dnsacme.Address("10.0.3.2"), "dev.onem.network"),
 		vnet.NAT("dns", "52:54:00:6a:94:c0", vnet.IP4("10.0.3.1/24")),
 		vm.New("dns01", 2, 2, vm.Network("dns", "52:54:00:6a:94:c1")),
 		vm.New("dns02", 2, 2, vm.Network("dns", "52:54:00:6a:94:c2")),
