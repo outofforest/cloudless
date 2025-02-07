@@ -21,13 +21,40 @@ import (
 	"github.com/outofforest/cloudless/pkg/dns/acme/wire"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/pebble"
+	"github.com/outofforest/cloudless/pkg/tnet"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
 	"github.com/outofforest/resonance"
 )
 
+// DirectoryConfig is the config of ACME directory service.
+type DirectoryConfig struct {
+	URL      string
+	Insecure bool
+}
+
+var (
+	// LetsEncrypt is the LetsEncrypt production config.
+	LetsEncrypt = DirectoryConfig{
+		URL: "https://acme-v02.api.letsencrypt.org/directory",
+	}
+
+	// LetsEncryptStaging is the LetsEncrypt staging config.
+	LetsEncryptStaging = DirectoryConfig{
+		URL: "https://acme-staging-v02.api.letsencrypt.org/directory",
+	}
+)
+
+// Pebble returns directory config for pebble.
+func Pebble(host string) DirectoryConfig {
+	return DirectoryConfig{
+		URL:      tnet.JoinScheme("https", host, pebble.Port) + "/dir",
+		Insecure: true,
+	}
+}
+
 // Service returns new acme client service.
-func Service(dnsACMEAddr string, domains ...string) host.Configurator {
+func Service(dirConfig DirectoryConfig, dnsACMEAddr string, domains ...string) host.Configurator {
 	return cloudless.Join(
 		cloudless.Service("acme", parallel.Fail, func(ctx context.Context) error {
 			if len(domains) == 0 {
@@ -35,7 +62,7 @@ func Service(dnsACMEAddr string, domains ...string) host.Configurator {
 			}
 
 			for {
-				if err := run(ctx, dnsACMEAddr, domains); err != nil {
+				if err := run(ctx, dirConfig, dnsACMEAddr, domains); err != nil {
 					if errors.Is(err, ctx.Err()) {
 						return err
 					}
@@ -57,7 +84,7 @@ type order struct {
 	Challenges []challenge
 }
 
-func run(ctx context.Context, dnsACMEAddr string, domains []string) error {
+func run(ctx context.Context, dirConfig DirectoryConfig, dnsACMEAddr string, domains []string) error {
 	accountKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		return errors.WithStack(err)
@@ -68,11 +95,11 @@ func run(ctx context.Context, dnsACMEAddr string, domains []string) error {
 		HTTPClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
+					InsecureSkipVerify: dirConfig.Insecure,
 				},
 			},
 		},
-		DirectoryURL: fmt.Sprintf("https://10.0.2.5:%d/dir", pebble.Port),
+		DirectoryURL: dirConfig.URL,
 	}
 
 	account, err := client.Register(ctx, &goacme.Account{

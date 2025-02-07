@@ -19,7 +19,7 @@ require (
 	github.com/outofforest/mass v0.2.1
 	github.com/outofforest/parallel v0.2.3
 	github.com/outofforest/proton v0.7.5
-	github.com/outofforest/resonance v0.7.2
+	github.com/outofforest/resonance v0.7.3
 	github.com/outofforest/run v0.8.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.20.5

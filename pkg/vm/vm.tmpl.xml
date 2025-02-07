@@ -5,8 +5,6 @@
     <currentMemory unit="GiB">{{ .Memory }}</currentMemory>
     <memoryBacking>
         <hugepages/>
-        <source type="memfd"/>
-        <access mode="shared"/>
     </memoryBacking>
     <vcpu placement="static">{{ .VCPUs }}</vcpu>
     <iothreads>1</iothreads>
@@ -120,9 +118,6 @@
             <address type="pci" domain="0x0000" bus="0x00" slot="0x01" function="0x0"/>
         </video>
         <watchdog model="itco" action="reset"/>
-        <memballoon model="virtio">
-            <address type="pci" domain="0x0000" bus="0x04" slot="0x00" function="0x0"/>
-        </memballoon>
         <rng model="virtio">
             <backend model="random">/dev/urandom</backend>
             <address type="pci" domain="0x0000" bus="0x05" slot="0x00" function="0x0"/>

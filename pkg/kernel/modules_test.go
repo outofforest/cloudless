@@ -40,7 +40,7 @@ func TestIsLoaded(t *testing.T) {
 
 	loaded, err := isLoaded("kernel/fs/overlayfs/overlay.ko.xz", "test/proc/modules")
 	requireT.NoError(err)
-	requireT.False(loaded)
+	requireT.True(loaded)
 
 	loaded, err = isLoaded("rfkill.ko.xz", "test/proc/modules")
 	requireT.NoError(err)

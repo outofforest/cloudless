@@ -9,6 +9,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/outofforest/cloudless/pkg/dns/acme/wire"
+	"github.com/outofforest/cloudless/pkg/tnet"
 	"github.com/outofforest/resonance"
 )
 
@@ -24,6 +25,11 @@ const (
 var WireConfig = resonance.Config[wire.Marshaller]{
 	MaxMessageSize:    4 * 1024,
 	MarshallerFactory: wire.NewMarshaller,
+}
+
+// Address returns address of dns acme endpoint.
+func Address(host string) string {
+	return tnet.Join(host, Port)
 }
 
 // NewServer creates new ACME server.

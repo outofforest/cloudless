@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strconv"
 
 	. "github.com/outofforest/cloudless" //nolint:stylecheck
@@ -59,11 +58,12 @@ var deployment = Deployment(
 		Network("00:01:0a:00:00:9b", "10.0.0.155/24"),
 		Network("52:54:00:47:a8:b6", "93.179.253.130/27", "93.179.253.131/27", "93.179.253.132/27"),
 		Firewall(
-			// Pebble.
-			firewall.RedirectV4TCPPort("10.0.0.155", pebble.Port, "10.0.2.5", pebble.Port),
+			// DNS.
+			firewall.RedirectV4UDPPort("93.179.253.130", dns.Port, "10.0.3.2", dns.Port),
+			firewall.RedirectV4UDPPort("93.179.253.131", dns.Port, "10.0.3.3", dns.Port),
 
 			// Grafana.
-			firewall.RedirectV4TCPPort("10.0.0.155", 3000, "10.0.1.2", 3000),
+			firewall.RedirectV4TCPPort("93.179.253.132", 3000, "10.0.1.2", 3000),
 
 			// Prometheus.
 			firewall.RedirectV4TCPPort("10.0.0.155", 3001, "10.0.1.2", 3001),
@@ -71,37 +71,48 @@ var deployment = Deployment(
 			// Loki.
 			firewall.RedirectV4TCPPort("10.0.0.155", 3002, "10.0.1.2", 3002),
 		),
-		dns.Service(
-			dns.ForwardTo("1.1.1.1", "8.8.8.8"),
-			dns.ForwardFor("10.0.0.0/24"),
-			dns.ACME(),
-			dns.Zone("exw.co", "ns1.exw.co", "wojtek@exw.co", 1,
-				dns.Nameservers("ns1.exw.co", "ns2.exw.co"),
-				dns.Domain("ns1.exw.co", "127.0.0.1"),
-				dns.Domain("ns2.exw.co", "127.0.0.2"),
-				dns.Domain("exw.co", "127.0.0.3"),
-				dns.Domain("test.exw.co", "127.0.0.5", "127.0.0.6", "127.0.0.7"),
-				dns.Domain("mail.exw.co", "127.0.0.8"),
-				dns.Alias("alias.exw.co", "exw.co"),
-				dns.Alias("lala.alias.exw.co", "alias.exw.co"),
-				dns.Text("exw.co", "text1", "text2"),
-				dns.MailExchange("mail.exw.co", 10),
-				dns.MailExchange("mail2.exw.co", 20),
-			),
-		),
-		acme.Service(fmt.Sprintf("10.0.0.155:%d", dnsacme.Port), "exw.co", "alias.exw.co"),
+		acme.Service(acme.Pebble("10.0.2.5"), dnsacme.Address("10.0.3.2"), "dev.onem.network"),
+		vnet.NAT("dns", "52:54:00:6a:94:c0", vnet.IP4("10.0.3.1/24")),
+		vm.New("dns01", 2, 2, vm.Network("dns", "52:54:00:6a:94:c1")),
+		vm.New("dns02", 2, 2, vm.Network("dns", "52:54:00:6a:94:c2")),
+		vnet.NAT("internal", "52:54:00:6d:94:c0", vnet.IP4("10.0.1.1/24")),
+		vm.New("monitoring", 5, 4, vm.Network("internal", "00:01:0a:00:02:05")),
 		cnet.NAT("acme", cnet.IP4("10.0.2.1/24")),
 		container.New("pebble", "/tmp/containers/pebble",
 			container.Network("acme", "52:54:00:6e:94:c3")),
-		vnet.NAT("internal", "52:54:00:6d:94:c0", vnet.IP4("10.0.1.1/24")),
-		vm.New("vm", 5, 4, vm.Network("internal", "00:01:0a:00:02:05")),
+	),
+	Host("dns01",
+		Gateway("10.0.3.1"),
+		Network("52:54:00:6a:94:c1", "10.0.3.2/24"),
+		dns.Service(
+			dns.ACME(),
+			dns.Zone("dev.onem.network", "ns1.dev.onem.network", "wojtek@exw.co", 1,
+				dns.Nameservers("ns1.dev.onem.network", "ns2.dev.onem.network"),
+				dns.Domain("ns1.dev.onem.network", "93.179.253.130"),
+				dns.Domain("ns2.dev.onem.network", "93.179.253.131"),
+				dns.Domain("dev.onem.network", "93.179.253.132"),
+			),
+		),
+	),
+	Host("dns02",
+		Gateway("10.0.3.1"),
+		Network("52:54:00:6a:94:c2", "10.0.3.3/24"),
+		dns.Service(
+			dns.ACME(),
+			dns.Zone("dev.onem.network", "ns1.dev.onem.network", "wojtek@exw.co", 1,
+				dns.Nameservers("ns1.dev.onem.network", "ns2.dev.onem.network"),
+				dns.Domain("ns1.dev.onem.network", "93.179.253.130"),
+				dns.Domain("ns2.dev.onem.network", "93.179.253.131"),
+				dns.Domain("dev.onem.network", "93.179.253.132"),
+			),
+		),
 	),
 	Container("pebble",
 		Gateway("10.0.2.1"),
 		Network("52:54:00:6e:94:c3", "10.0.2.5/24"),
-		pebble.Container("/tmp/app/pebble", "10.0.2.1:53"),
+		pebble.Container("/tmp/app/pebble", "10.0.3.2:53"),
 	),
-	Host("vm",
+	Host("monitoring",
 		Gateway("10.0.1.1"),
 		Network("00:01:0a:00:02:05", "10.0.1.2/24"),
 		Firewall(
