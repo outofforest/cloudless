@@ -79,6 +79,13 @@ func BoxFactory(configurators ...host.Configurator) BoxFunc {
 	}
 }
 
+// ExtendBoxFactory extends box factory with another sets of configurators.
+func ExtendBoxFactory(boxFunc BoxFunc, configurators ...host.Configurator) BoxFunc {
+	return func(hostname string, configurators2 ...host.Configurator) host.Configurator {
+		return boxFunc(hostname, append(append([]host.Configurator{}, configurators...), configurators2...)...)
+	}
+}
+
 // Join combines many configurator into a single one.
 func Join(configurators ...host.Configurator) host.Configurator {
 	return func(c *host.Configuration) error {
