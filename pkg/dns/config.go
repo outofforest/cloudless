@@ -55,10 +55,10 @@ type AliasConfig struct {
 
 type (
 	// Configurator defines function setting the dns configuration.
-	Configurator func(n *Config)
+	Configurator func(c *Config)
 
 	// ZoneConfigurator defines function setting the dns zone configuration.
-	ZoneConfigurator func(n *ZoneConfig)
+	ZoneConfigurator func(c *ZoneConfig)
 )
 
 // Zone creates new DNS zone.

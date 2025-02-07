@@ -20,53 +20,49 @@ import (
 	dnsacme "github.com/outofforest/cloudless/pkg/dns/acme"
 	"github.com/outofforest/cloudless/pkg/dns/acme/wire"
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/pebble"
-	"github.com/outofforest/cloudless/pkg/tnet"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
 	"github.com/outofforest/resonance"
 )
 
-// DirectoryConfig is the config of ACME directory service.
-type DirectoryConfig struct {
-	URL      string
-	Insecure bool
-}
-
-var (
-	// LetsEncrypt is the LetsEncrypt production config.
-	LetsEncrypt = DirectoryConfig{
-		URL: "https://acme-v02.api.letsencrypt.org/directory",
-	}
-
-	// LetsEncryptStaging is the LetsEncrypt staging config.
-	LetsEncryptStaging = DirectoryConfig{
-		URL: "https://acme-staging-v02.api.letsencrypt.org/directory",
-	}
+const (
+	rerunInterval            = 5 * time.Second
+	dnsACMEConnectionTimeout = 20 * time.Second
+	dnsACMEOnboardTimeout    = 2 * time.Second
+	dnsACMEACKTimeout        = 5 * time.Second
 )
 
-// Pebble returns directory config for pebble.
-func Pebble(host string) DirectoryConfig {
-	return DirectoryConfig{
-		URL:      tnet.JoinScheme("https", host, pebble.Port) + "/dir",
-		Insecure: true,
-	}
-}
-
 // Service returns new acme client service.
-func Service(dirConfig DirectoryConfig, dnsACMEAddr string, domains ...string) host.Configurator {
+func Service(dirConfig DirectoryConfig, configurators ...Configurator) host.Configurator {
 	return cloudless.Join(
 		cloudless.Service("acme", parallel.Fail, func(ctx context.Context) error {
-			if len(domains) == 0 {
+			config := Config{
+				Directory: dirConfig,
+			}
+
+			for _, configurator := range configurators {
+				configurator(&config)
+			}
+
+			if len(config.Domains) == 0 {
 				return errors.New("no domains defined")
+			}
+			if len(config.DNSACME) == 0 {
+				return errors.New("no dns acme endpoints defined")
 			}
 
 			for {
-				if err := run(ctx, dirConfig, dnsACMEAddr, domains); err != nil {
+				if err := run(ctx, config); err != nil {
 					if errors.Is(err, ctx.Err()) {
 						return err
 					}
 					logger.Get(ctx).Error("ACME failed", zap.Error(err))
+				}
+
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				case <-time.After(rerunInterval):
 				}
 			}
 		}),
@@ -84,7 +80,10 @@ type order struct {
 	Challenges []challenge
 }
 
-func run(ctx context.Context, dirConfig DirectoryConfig, dnsACMEAddr string, domains []string) error {
+//nolint:gocyclo
+func run(ctx context.Context, config Config) error {
+	log := logger.Get(ctx)
+
 	accountKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		return errors.WithStack(err)
@@ -95,11 +94,11 @@ func run(ctx context.Context, dirConfig DirectoryConfig, dnsACMEAddr string, dom
 		HTTPClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: dirConfig.Insecure,
+					InsecureSkipVerify: config.Directory.Insecure,
 				},
 			},
 		},
-		DirectoryURL: dirConfig.URL,
+		DirectoryURL: config.Directory.URL,
 	}
 
 	account, err := client.Register(ctx, &goacme.Account{
@@ -114,6 +113,7 @@ func run(ctx context.Context, dirConfig DirectoryConfig, dnsACMEAddr string, dom
 	waitChClosed := make(chan time.Time)
 	close(waitChClosed)
 	var waitCh <-chan time.Time = waitChClosed
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -122,9 +122,69 @@ func run(ctx context.Context, dirConfig DirectoryConfig, dnsACMEAddr string, dom
 			waitCh = time.After(time.Minute)
 		}
 
-		if err := resonance.RunClient[wire.Marshaller](ctx, dnsACMEAddr, dnsacme.WireConfig,
-			func(ctx context.Context, recvCh <-chan any, c *resonance.Connection[wire.Marshaller]) error {
-				acmeOrder, err := client.AuthorizeOrder(ctx, goacme.DomainIDs(domains...))
+		err := parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+			startCh := make(chan struct{}, len(config.DNSACME))
+			reqCh := make(chan *wire.MsgRequest, len(config.DNSACME))
+			ackCh := make(chan struct{}, len(config.DNSACME))
+
+			for _, dnsACMEAddr := range config.DNSACME {
+				spawn("dnsacme", parallel.Continue, func(ctx context.Context) error {
+					err := resonance.RunClient[wire.Marshaller](ctx, dnsACMEAddr, dnsacme.WireConfig,
+						func(ctx context.Context, recvCh <-chan any, c *resonance.Connection[wire.Marshaller]) error {
+							startCh <- struct{}{}
+							var req *wire.MsgRequest
+
+							select {
+							case <-ctx.Done():
+								return errors.WithStack(ctx.Err())
+							case req = <-reqCh:
+							}
+
+							c.Send(req)
+
+							msg, ok := <-recvCh
+							if !ok {
+								return errors.WithStack(ctx.Err())
+							}
+							if _, ok := msg.(*wire.MsgAck); !ok {
+								return errors.New("unexpected response")
+							}
+
+							ackCh <- struct{}{}
+
+							<-ctx.Done()
+							return errors.WithStack(ctx.Err())
+						},
+					)
+					if err != nil && !errors.Is(err, context.Canceled) {
+						logger.Get(ctx).Error("DNS ACME connection failed", zap.Error(err))
+					}
+					return nil
+				})
+			}
+
+			spawn("order", parallel.Exit, func(ctx context.Context) error {
+				waitStartCh := time.After(dnsACMEConnectionTimeout)
+				var started int
+			startLoop:
+				for range config.DNSACME {
+					select {
+					case <-ctx.Done():
+						return errors.WithStack(ctx.Err())
+					case <-waitStartCh:
+						if started > 0 {
+							break startLoop
+						}
+						return errors.New("timeout waiting on connection to dns acme")
+					case <-startCh:
+						if started == 0 {
+							waitStartCh = time.After(dnsACMEOnboardTimeout)
+						}
+						started++
+					}
+				}
+
+				acmeOrder, err := client.AuthorizeOrder(ctx, goacme.DomainIDs(config.Domains...))
 				if err != nil {
 					return errors.WithStack(err)
 				}
@@ -170,14 +230,25 @@ func run(ctx context.Context, dirConfig DirectoryConfig, dnsACMEAddr string, dom
 					})
 				}
 
-				c.Send(req)
-
-				msg, ok := <-recvCh
-				if !ok {
-					return nil
+				for range config.DNSACME {
+					reqCh <- req
 				}
-				if _, ok := msg.(*wire.MsgAck); !ok {
-					return errors.New("unexpected response")
+
+				waitACKCh := time.After(dnsACMEACKTimeout)
+				var acked bool
+			ackLoop:
+				for range started {
+					select {
+					case <-ctx.Done():
+						return errors.WithStack(ctx.Err())
+					case <-waitACKCh:
+						if acked {
+							break ackLoop
+						}
+						return errors.New("timeout waiting on ack from to dns acme")
+					case <-ackCh:
+						acked = true
+					}
 				}
 
 				for _, ch := range o.Challenges {
@@ -201,8 +272,8 @@ func run(ctx context.Context, dirConfig DirectoryConfig, dnsACMEAddr string, dom
 				}
 
 				certReq := &x509.CertificateRequest{
-					Subject:  pkix.Name{CommonName: domains[0]},
-					DNSNames: domains,
+					Subject:  pkix.Name{CommonName: config.Domains[0]},
+					DNSNames: config.Domains,
 				}
 				csr, err := x509.CreateCertificateRequest(rand.Reader, certReq, certKey)
 				if err != nil {
@@ -217,9 +288,18 @@ func run(ctx context.Context, dirConfig DirectoryConfig, dnsACMEAddr string, dom
 				fmt.Println(chain)
 
 				return nil
-			},
-		); err != nil {
+			})
+
+			return nil
+		})
+
+		switch {
+		case err == nil:
+		case errors.Is(err, ctx.Err()):
 			return err
+		case errors.Is(err, context.Canceled):
+		default:
+			log.Error("Certificate issuance failed", zap.Error(err))
 		}
 	}
 }
