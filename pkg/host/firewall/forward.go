@@ -35,3 +35,26 @@ func ForwardFrom(iface string) RuleSource {
 		}, nil
 	}
 }
+
+// Forward enables forwarding connections outgoing from the interface.
+func Forward(iface string) RuleSource {
+	return func(chains Chains) ([]*nftables.Rule, error) {
+		return []*nftables.Rule{
+			{
+				Chain: chains.V4FilterForward,
+				Exprs: rules.Expressions(
+					rules.OutgoingInterface(iface),
+					rules.ConnectionEstablished(),
+					rules.Accept(),
+				),
+			},
+			{
+				Chain: chains.V4FilterForward,
+				Exprs: rules.Expressions(
+					rules.IncomingInterface(iface),
+					rules.Accept(),
+				),
+			},
+		}, nil
+	}
+}

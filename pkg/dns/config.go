@@ -8,6 +8,8 @@ import (
 
 // Config stores dns configuration.
 type Config struct {
+	DNSPort    uint16
+	ACMEPort   uint16
 	Zones      map[string]ZoneConfig
 	ForwardTo  []net.IP
 	ForwardFor []net.IPNet

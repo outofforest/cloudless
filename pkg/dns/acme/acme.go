@@ -27,14 +27,16 @@ var WireConfig = resonance.Config[wire.Marshaller]{
 }
 
 // NewServer creates new ACME server.
-func NewServer() *Server {
+func NewServer(port uint16) *Server {
 	return &Server{
+		port:       port,
 		challenges: map[string]map[uuid.UUID]string{},
 	}
 }
 
 // Server is the ACME server accepting DNS challenges.
 type Server struct {
+	port       uint16
 	mu         sync.Mutex
 	challenges map[string]map[uuid.UUID]string
 }
@@ -43,7 +45,7 @@ type Server struct {
 func (s *Server) Run(ctx context.Context) error {
 	l, err := net.ListenTCP("tcp", &net.TCPAddr{
 		IP:   net.IPv4zero,
-		Port: Port,
+		Port: int(s.port),
 	})
 	if err != nil {
 		return errors.WithStack(err)

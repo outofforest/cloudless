@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"golang.org/x/net/ipv4"
 
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/dns/acme"
@@ -49,18 +50,20 @@ const (
 // Service returns DNS service.
 func Service(configurators ...Configurator) host.Configurator {
 	config := Config{
-		Zones: map[string]ZoneConfig{},
+		DNSPort:  Port,
+		ACMEPort: acme.Port,
+		Zones:    map[string]ZoneConfig{},
 	}
 	for _, configurator := range configurators {
 		configurator(&config)
 	}
 
 	return cloudless.Join(
-		cloudless.Firewall(firewall.OpenV4UDPPort(Port)),
+		cloudless.Firewall(firewall.OpenV4UDPPort(config.DNSPort)),
 		cloudless.Service("dns", parallel.Fail, func(ctx context.Context) error {
 			return run(ctx, config)
 		}),
-		cloudless.If(config.EnableACME, cloudless.Firewall(firewall.OpenV4TCPPort(acme.Port))),
+		cloudless.If(config.EnableACME, cloudless.Firewall(firewall.OpenV4TCPPort(config.ACMEPort))),
 	)
 }
 
@@ -70,7 +73,7 @@ func run(ctx context.Context, config Config) error {
 		var forwardCh chan forwardRequest
 
 		if config.EnableACME {
-			acmeServer = acme.NewServer()
+			acmeServer = acme.NewServer(config.ACMEPort)
 			spawn("acme", parallel.Fail, acmeServer.Run)
 		}
 		if len(config.ForwardFor) > 0 && len(config.ForwardTo) > 0 {
@@ -103,9 +106,13 @@ func run(ctx context.Context, config Config) error {
 func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardRequest, acmeServer *acme.Server) error {
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{
 		IP:   net.IPv4zero,
-		Port: Port,
+		Port: int(config.DNSPort),
 	})
 	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	if err := ipv4.NewPacketConn(conn).SetControlMessage(ipv4.FlagDst|ipv4.FlagInterface, true); err != nil {
 		return errors.WithStack(err)
 	}
 
@@ -117,30 +124,36 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 		})
 		spawn("server", parallel.Fail, func(ctx context.Context) error {
 			buff := make([]byte, bufferSize)
+			ooBuff := make([]byte, bufferSize)
 			massBuff := mass.New[byte](100 * bufferSize)
 
 			var queryID uint64
+			cm := &ipv4.ControlMessage{}
 
 			for {
-				n, addr, err := conn.ReadFrom(buff)
+				n, noob, _, addr, err := conn.ReadMsgUDP(buff, ooBuff)
 				if err != nil {
 					if ctx.Err() != nil {
 						return errors.WithStack(ctx.Err())
 					}
 					return errors.WithStack(err)
 				}
+				if err := cm.Parse(ooBuff[:noob]); err != nil {
+					return errors.WithStack(err)
+				}
+				cm.Src, cm.Dst = cm.Dst, nil
 
 				h, ok := readHeader(buff[:n])
 				if !ok || h.QR || h.TC || h.QDCount == 0 || h.RCode != 0x00 || h.ANCount != 0 || h.NSCount != 0 {
 					h.RCode = rCodeFormatError
-					if err := sendError(h, addr, conn, buff); err != nil {
+					if err := sendError(h, addr, conn, buff, cm); err != nil {
 						return err
 					}
 					continue
 				}
 				if h.Opcode != 0x00 || h.QDCount > 1 {
 					h.RCode = rCodeNotImplemented
-					if err := sendError(h, addr, conn, buff); err != nil {
+					if err := sendError(h, addr, conn, buff, cm); err != nil {
 						return err
 					}
 					continue
@@ -157,7 +170,7 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 				q, ok := readQuery(buff[headerSize:n])
 				if !ok || q.QName == "" {
 					h.RCode = rCodeFormatError
-					if err := sendError(h, addr, conn, buff); err != nil {
+					if err := sendError(h, addr, conn, buff, cm); err != nil {
 						return err
 					}
 					continue
@@ -167,7 +180,7 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 
 				if q.QClass != classInternet {
 					h.RCode = rCodeNotImplemented
-					if err := sendError(h, addr, conn, b); err != nil {
+					if err := sendError(h, addr, conn, b, cm); err != nil {
 						return err
 					}
 					continue
@@ -198,7 +211,7 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 						}
 						if successCount == 0 {
 							h.RCode = rCodeServerFailure
-							if err := sendError(h, addr, conn, b); err != nil {
+							if err := sendError(h, addr, conn, b, cm); err != nil {
 								return err
 							}
 						}
@@ -206,7 +219,7 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 					}
 
 					h.RCode = rCodeRefused
-					if err := sendError(h, addr, conn, b); err != nil {
+					if err := sendError(h, addr, conn, b, cm); err != nil {
 						return err
 					}
 
@@ -221,7 +234,8 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 				if h.RCode != rCodeOK {
 					b = nil
 				}
-				if _, err := conn.WriteTo(buff[:headerSize+len(b)], addr); err != nil {
+
+				if _, _, err := conn.WriteMsgUDP(buff[:headerSize+len(b)], cm.Marshal(), addr); err != nil {
 					return err
 				}
 			}
@@ -231,17 +245,16 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 	})
 }
 
-func forwardingAllowed(addr net.Addr, forwardFor []net.IPNet) bool {
-	udpAddr := addr.(*net.UDPAddr)
+func forwardingAllowed(addr *net.UDPAddr, forwardFor []net.IPNet) bool {
 	for _, n := range forwardFor {
-		if n.Contains(udpAddr.IP) {
+		if n.Contains(addr.IP) {
 			return true
 		}
 	}
 	return false
 }
 
-func sendError(h header, addr net.Addr, conn *net.UDPConn, b []byte) error {
+func sendError(h header, addr *net.UDPAddr, conn *net.UDPConn, b []byte, cm *ipv4.ControlMessage) error {
 	h.QR = true
 	h.AA = true
 	h.TC = false
@@ -252,7 +265,7 @@ func sendError(h header, addr net.Addr, conn *net.UDPConn, b []byte) error {
 	h.ARCount = 0
 
 	putHeader(h, b[:0])
-	_, err := conn.WriteTo(b[:headerSize], addr)
+	_, _, err := conn.WriteMsgUDP(b[:headerSize], cm.Marshal(), addr)
 	return errors.WithStack(err)
 }
 

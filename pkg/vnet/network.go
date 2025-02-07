@@ -53,6 +53,7 @@ func NAT(name, mac string, configurators ...Configurator) host.Configurator {
 
 	return cloudless.Join(
 		cloudless.Firewall(
+			firewall.Forward(ifName),
 			firewall.Masquerade(ifName),
 		),
 		cloudless.EnableIPForwarding(),

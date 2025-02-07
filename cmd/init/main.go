@@ -55,8 +55,9 @@ var deployment = Deployment(
 		containercache.Service("/tmp/repo-containers"),
 	),
 	Host("server",
-		Gateway("10.0.0.1"),
+		Gateway("93.179.253.129"),
 		Network("00:01:0a:00:00:9b", "10.0.0.155/24"),
+		Network("52:54:00:47:a8:b6", "93.179.253.130/27", "93.179.253.131/27", "93.179.253.132/27"),
 		Firewall(
 			// Pebble.
 			firewall.RedirectV4TCPPort("10.0.0.155", pebble.Port, "10.0.2.5", pebble.Port),
