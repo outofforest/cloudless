@@ -2,6 +2,7 @@ package dns
 
 import (
 	"net"
+	"strings"
 
 	"github.com/outofforest/cloudless/pkg/parse"
 )
@@ -64,10 +65,10 @@ type (
 func Zone(domain, nameserver, email string, serialNumber uint32, configurators ...ZoneConfigurator) Configurator {
 	return func(c *Config) {
 		zoneConfig := ZoneConfig{
-			Domain:         domain,
+			Domain:         strings.ToLower(domain),
 			SerialNumber:   serialNumber,
-			MainNameserver: nameserver,
-			Email:          email,
+			MainNameserver: strings.ToLower(nameserver),
+			Email:          strings.ToLower(email),
 			Domains:        map[string][]net.IP{},
 			Aliases:        map[string]AliasConfig{},
 			MailExchanges:  map[string]uint16{},
@@ -78,14 +79,16 @@ func Zone(domain, nameserver, email string, serialNumber uint32, configurators .
 			configurator(&zoneConfig)
 		}
 
-		c.Zones[domain] = zoneConfig
+		c.Zones[zoneConfig.Domain] = zoneConfig
 	}
 }
 
 // Nameservers add nameservers to the zone.
 func Nameservers(nameservers ...string) ZoneConfigurator {
 	return func(c *ZoneConfig) {
-		c.Nameservers = append(c.Nameservers, nameservers...)
+		for _, n := range nameservers {
+			c.Nameservers = append(c.Nameservers, strings.ToLower(n))
+		}
 	}
 }
 
@@ -96,6 +99,7 @@ func Domain(domain string, ips ...string) ZoneConfigurator {
 		parsedIPs = append(parsedIPs, parse.IP4(ip))
 	}
 	return func(c *ZoneConfig) {
+		domain = strings.ToLower(domain)
 		c.Domains[domain] = append(c.Domains[domain], parsedIPs...)
 	}
 }
@@ -103,20 +107,21 @@ func Domain(domain string, ips ...string) ZoneConfigurator {
 // Alias adds CNAME record to the zone.
 func Alias(from, to string) ZoneConfigurator {
 	return func(c *ZoneConfig) {
-		c.Aliases[from] = AliasConfig{Target: to}
+		c.Aliases[strings.ToLower(from)] = AliasConfig{Target: strings.ToLower(to)}
 	}
 }
 
 // MailExchange adds MX record to the zone.
 func MailExchange(domain string, priority uint16) ZoneConfigurator {
 	return func(c *ZoneConfig) {
-		c.MailExchanges[domain] = priority
+		c.MailExchanges[strings.ToLower(domain)] = priority
 	}
 }
 
 // Text adds TXT record to the zone.
 func Text(domain string, values ...string) ZoneConfigurator {
 	return func(c *ZoneConfig) {
+		domain = strings.ToLower(domain)
 		c.Texts[domain] = append(c.Texts[domain], values...)
 	}
 }
