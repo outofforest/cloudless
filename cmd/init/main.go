@@ -38,6 +38,19 @@ var (
 	Container = BoxFactory(
 		ContainerMirrors("http://10.0.0.100:81"),
 	)
+
+	// HostDNS configures DNS virtual machine.
+	HostDNS = ExtendBoxFactory(Host,
+		dns.Service(
+			dns.ACME(),
+			dns.Zone("dev.onem.network", "ns1.dev.onem.network", "wojtek@exw.co", 1,
+				dns.Nameservers("ns1.dev.onem.network", "ns2.dev.onem.network"),
+				dns.Domain("ns1.dev.onem.network", "93.179.253.130"),
+				dns.Domain("ns2.dev.onem.network", "93.179.253.131"),
+				dns.Domain("dev.onem.network", "93.179.253.132"),
+			),
+		),
+	)
 )
 
 var deployment = Deployment(
@@ -82,31 +95,13 @@ var deployment = Deployment(
 		container.New("pebble", "/tmp/containers/pebble",
 			container.Network("acme", "52:54:00:6e:94:c3")),
 	),
-	Host("dns01",
+	HostDNS("dns01",
 		Gateway("10.0.3.1"),
 		Network("52:54:00:6a:94:c1", "10.0.3.2/24"),
-		dns.Service(
-			dns.ACME(),
-			dns.Zone("dev.onem.network", "ns1.dev.onem.network", "wojtek@exw.co", 1,
-				dns.Nameservers("ns1.dev.onem.network", "ns2.dev.onem.network"),
-				dns.Domain("ns1.dev.onem.network", "93.179.253.130"),
-				dns.Domain("ns2.dev.onem.network", "93.179.253.131"),
-				dns.Domain("dev.onem.network", "93.179.253.132"),
-			),
-		),
 	),
-	Host("dns02",
+	HostDNS("dns02",
 		Gateway("10.0.3.1"),
 		Network("52:54:00:6a:94:c2", "10.0.3.3/24"),
-		dns.Service(
-			dns.ACME(),
-			dns.Zone("dev.onem.network", "ns1.dev.onem.network", "wojtek@exw.co", 1,
-				dns.Nameservers("ns1.dev.onem.network", "ns2.dev.onem.network"),
-				dns.Domain("ns1.dev.onem.network", "93.179.253.130"),
-				dns.Domain("ns2.dev.onem.network", "93.179.253.131"),
-				dns.Domain("dev.onem.network", "93.179.253.132"),
-			),
-		),
 	),
 	Container("pebble",
 		Gateway("10.0.2.1"),
