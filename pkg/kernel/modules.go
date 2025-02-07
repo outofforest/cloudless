@@ -148,7 +148,8 @@ func findModulesToLoad(module string, fileDeps string) ([]string, error) {
 }
 
 func isLoaded(modulePath string, fileLoaded string) (bool, error) {
-	module := strings.TrimSuffix(filepath.Base(modulePath), ".ko.xz")
+	module1 := strings.ReplaceAll(strings.TrimSuffix(filepath.Base(modulePath), ".ko.xz"), "_", "-")
+	module2 := strings.ReplaceAll(module1, "-", "_")
 	modulesF, err := os.Open(fileLoaded)
 	if err != nil {
 		return false, errors.WithStack(err)
@@ -170,20 +171,10 @@ func isLoaded(modulePath string, fileLoaded string) (bool, error) {
 		if spaceIndex < 0 {
 			continue
 		}
-		if line[:spaceIndex] != module {
-			continue
+		moduleName := line[:spaceIndex]
+		if moduleName == module1 || moduleName == module2 {
+			return true, nil
 		}
-		line = line[spaceIndex+1:]
-		spaceIndex = strings.Index(line, " ")
-		if spaceIndex < 0 {
-			continue
-		}
-		line = line[spaceIndex+1:]
-		spaceIndex = strings.Index(line, " ")
-		if spaceIndex < 0 {
-			continue
-		}
-		return line[:spaceIndex] != "0", nil
 	}
 }
 
