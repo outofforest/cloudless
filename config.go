@@ -21,11 +21,20 @@ var (
 	// DefaultKernelModules is the reasonable list of kernel modules providing networking and storage.
 	DefaultKernelModules = []kernel.Module{
 		// Networking.
-		{Name: "virtio_net"},
-		{Name: "vhost_net"},
+		{Name: "virtio-net"},
+		{Name: "vhost-net"},
+		{Name: "bridge"},
+		{Name: "veth"},
+
+		// NFTables.
+		{Name: "nft-masq"},
+		{Name: "nft-nat"},
+		{Name: "nft-fib-ipv4"},
+		{Name: "nft-ct"},
+		{Name: "nft-chain-nat"},
 
 		// Storage.
-		{Name: "virtio_scsi"},
+		{Name: "virtio-scsi"},
 	}
 
 	// DefaultDNS is the list of default DNS servers.

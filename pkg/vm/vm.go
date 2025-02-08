@@ -62,11 +62,6 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 				return errors.WithStack(err)
 			}
 
-			vmlinuz, err := kernelPath()
-			if err != nil {
-				return err
-			}
-
 			filePath := fmt.Sprintf("/etc/libvirt/qemu/%s.xml", name)
 			f, err := os.OpenFile(filePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 			if err != nil {
@@ -89,7 +84,7 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 				Cores:    cores,
 				VCPUs:    2 * cores,
 				Memory:   memory,
-				Kernel:   vmlinuz,
+				Kernel:   "/boot/vmlinuz",
 				Initrd:   "/boot/initramfs",
 				Networks: vm.Networks,
 			}
@@ -112,12 +107,4 @@ func Network(name, mac string) Configurator {
 			MAC:  parse.MAC(mac),
 		})
 	}
-}
-
-func kernelPath() (string, error) {
-	release, err := kernel.Release()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join("/usr/lib/modules", release, "vmlinuz"), nil
 }

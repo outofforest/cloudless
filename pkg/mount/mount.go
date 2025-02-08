@@ -69,10 +69,6 @@ func HostRoot() error {
 		return errors.WithStack(err)
 	}
 
-	if err := untarInitramfs(); err != nil {
-		return err
-	}
-
 	if err := os.MkdirAll("/newroot/oldroot", 0o700); err != nil {
 		return errors.WithStack(err)
 	}
@@ -84,6 +80,10 @@ func HostRoot() error {
 	}
 	if err := syscall.Chroot("."); err != nil {
 		return errors.WithStack(err)
+	}
+
+	if err := untarDistro(); err != nil {
+		return err
 	}
 
 	if err := ProcFS("/proc"); err != nil {
@@ -134,8 +134,8 @@ func ContainerRoot() error {
 	return pivotRoot()
 }
 
-func untarInitramfs() error {
-	f, err := os.Open("/initramfs.tar")
+func untarDistro() error {
+	f, err := os.Open("/oldroot/distro.tar")
 	if err != nil {
 		return errors.WithStack(err)
 	}

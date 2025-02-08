@@ -1,13 +1,11 @@
 package build
 
 import (
-	"archive/tar"
 	"compress/gzip"
 	"context"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/cavaliergopher/cpio"
 	"github.com/diskfs/go-diskfs/backend/file"
@@ -19,12 +17,8 @@ import (
 )
 
 const (
-	initBinPath       = "bin/init"
-	initramfsPath     = "bin/embed/initramfs"
-	initramfsBasePath = "bin/embed/initramfs.tar"
-	kernelPath        = "bin/embed/vmlinuz"
-	kernelFilePrefix  = "./usr/lib/modules/"
-	kernelFileSuffix  = "/vmlinuz"
+	initBinPath   = "bin/init"
+	initramfsPath = "bin/embed/initramfs"
 )
 
 func buildLoader(ctx context.Context, deps types.DepsFunc) error {
@@ -74,7 +68,7 @@ func buildLoader(ctx context.Context, deps types.DepsFunc) error {
 }
 
 func prepareEmbeds(ctx context.Context, deps types.DepsFunc) error {
-	deps(buildInit)
+	deps(buildInit, buildDistro)
 
 	initramfsF, err := os.OpenFile(initramfsPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
@@ -88,26 +82,10 @@ func prepareEmbeds(ctx context.Context, deps types.DepsFunc) error {
 	w := cpio.NewWriter(cW)
 	defer w.Close()
 
-	if err := addFile(w, 0o600, initramfsBasePath); err != nil {
+	if err := addFile(w, 0o600, finalDistroPath); err != nil {
 		return err
 	}
-	if err := addFile(w, 0o700, initBinPath); err != nil {
-		return err
-	}
-
-	initramfsBaseF, err := os.Open(initramfsBasePath)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer initramfsBaseF.Close()
-
-	vmLinuzF, err := os.OpenFile(kernelPath, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o700)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer vmLinuzF.Close()
-
-	return untarVMLinuz(initramfsBaseF, vmLinuzF)
+	return addFile(w, 0o700, initBinPath)
 }
 
 func addFile(w *cpio.Writer, mode cpio.FileMode, file string) error {
@@ -135,24 +113,4 @@ func addFile(w *cpio.Writer, mode cpio.FileMode, file string) error {
 
 	_, err = io.Copy(w, f)
 	return errors.WithStack(err)
-}
-
-func untarVMLinuz(reader io.Reader, writer io.Writer) error {
-	tr := tar.NewReader(reader)
-	for {
-		header, err := tr.Next()
-		switch {
-		case errors.Is(err, io.EOF):
-			return errors.New("kernel not found")
-		case err != nil:
-			return errors.WithStack(err)
-		case header == nil:
-			continue
-		case header.Typeflag == tar.TypeReg:
-			if strings.HasPrefix(header.Name, kernelFilePrefix) && strings.HasSuffix(header.Name, kernelFileSuffix) {
-				_, err := io.Copy(writer, tr)
-				return errors.WithStack(err)
-			}
-		}
-	}
 }
