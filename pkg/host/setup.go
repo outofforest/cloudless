@@ -776,7 +776,7 @@ func buildInitramfs() error {
 	w := cpio.NewWriter(cW)
 	defer w.Close()
 
-	if err := addFile(w, 0o600, "/oldroot/initramfs.tar"); err != nil {
+	if err := addFile(w, 0o600, "/oldroot/distro.tar"); err != nil {
 		return err
 	}
 	return addFile(w, 0o700, "/oldroot/init")
