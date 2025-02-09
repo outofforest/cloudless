@@ -21,8 +21,13 @@ const (
 	initramfsPath = "bin/embed/initramfs"
 )
 
-func buildLoader(ctx context.Context, deps types.DepsFunc) error {
-	deps(prepareEmbeds, zig.EnsureZig)
+// Loader builds UEFI loader for application.
+func Loader(ctx context.Context, deps types.DepsFunc, config Config) error {
+	deps(zig.EnsureZig)
+
+	if err := prepareEmbeds(ctx, config); err != nil {
+		return err
+	}
 
 	if err := zig.Build(ctx, deps, zig.BuildConfig{
 		PackagePath: "loader",
@@ -67,8 +72,11 @@ func buildLoader(ctx context.Context, deps types.DepsFunc) error {
 	return errors.WithStack(err)
 }
 
-func prepareEmbeds(ctx context.Context, deps types.DepsFunc) error {
-	deps(buildInit, buildDistro)
+func prepareEmbeds(ctx context.Context, config Config) error {
+	distroPath, err := buildDistro(ctx, config)
+	if err != nil {
+		return err
+	}
 
 	initramfsF, err := os.OpenFile(initramfsPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
@@ -82,10 +90,10 @@ func prepareEmbeds(ctx context.Context, deps types.DepsFunc) error {
 	w := cpio.NewWriter(cW)
 	defer w.Close()
 
-	if err := addFile(w, 0o600, finalDistroPath); err != nil {
+	if err := addFile(w, 0o600, distroPath); err != nil {
 		return err
 	}
-	return addFile(w, 0o700, initBinPath)
+	return addFile(w, 0o700, config.InitBinPath)
 }
 
 func addFile(w *cpio.Writer, mode cpio.FileMode, file string) error {

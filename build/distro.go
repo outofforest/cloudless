@@ -8,6 +8,7 @@ import (
 	"debug/elf"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -19,21 +20,12 @@ import (
 	"github.com/samber/lo"
 	"github.com/sassoftware/go-rpmutils"
 	"github.com/ulikunitz/xz"
-
-	"github.com/outofforest/build/v2/pkg/types"
 )
 
-// https://packages.fedoraproject.org
 const (
-	//nolint:lll
-	fedoraURL       = "https://github.com/fedora-cloud/docker-brew-fedora/raw/54e85723288471bb9dc81bc5cfed807635f93818/x86_64/fedora-20250119.tar"
-	fedoraSHA256    = "3b8a25c27f4773557aee851f75beba17d910c968671c2771a105ce7c7a40e3ec"
 	baseDistroPath  = "bin/distro/distro.base.tar"
 	finalDistroPath = "bin/distro/distro.tar"
 
-	//nolint:lll
-	kernelCoreURL    = "https://kojipkgs.fedoraproject.org/packages/kernel/6.12.7/200.fc41/x86_64/kernel-core-6.12.7-200.fc41.x86_64.rpm"
-	kernelSHA256     = "5cd46b0ba12275d811470c84a8d0fbfcda364d278d40be8a9d0ade2d9f396752"
 	kernelFile       = "vmlinuz"
 	kernelPath       = "bin/embed/vmlinuz"
 	kernelTargetPath = "/boot/vmlinuz"
@@ -44,61 +36,39 @@ const (
 	depsFile         = "bin/distro/deps.json"
 )
 
-type modulePackage struct {
-	URL    string
-	SHA256 string
-}
+//nolint:gocyclo
+func buildDistro(ctx context.Context, config Config) (string, error) {
+	if err := downloadDistro(ctx, config.Base); err != nil {
+		return "", err
+	}
+	if err := downloadKernel(ctx, config.KernelPackage); err != nil {
+		return "", err
+	}
+	if err := downloadModules(ctx, config.KernelModulePackages, config.KernelModules); err != nil {
+		return "", err
+	}
 
-var modulePackages = []modulePackage{
-	{
-		URL:    "https://kojipkgs.fedoraproject.org/packages/kernel/6.12.7/200.fc41/x86_64/kernel-modules-core-6.12.7-200.fc41.x86_64.rpm", //nolint:lll
-		SHA256: "791f222e27395c571319c93eb17cbf391bfbd8955557478e5301152834b3b662",
-	},
-	{
-		URL:    "https://kojipkgs.fedoraproject.org/packages/kernel/6.12.7/200.fc41/x86_64/kernel-modules-6.12.7-200.fc41.x86_64.rpm", //nolint:lll
-		SHA256: "d5d9603ec1bf97b01c30f98992dda9993b8a7cd4f885eb5b732064ec2f6b4936",
-	},
-}
-
-var requiredModules = []string{
-	"tun",
-	"kvm-intel",
-	"virtio-net",
-	"vhost-net",
-	"virtio-scsi",
-	"bridge",
-	"veth",
-	"nft-masq",
-	"nft-nat",
-	"nft-fib-ipv4",
-	"nft-ct",
-	"nft-chain-nat",
-}
-
-func buildDistro(_ context.Context, deps types.DepsFunc) error {
-	deps(downloadDistro, downloadKernel, downloadModules)
-
-	baseInitramfsF, err := os.Open(baseDistroPath)
+	baseDistroF, err := os.Open(baseDistroPath)
 	if err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
-	defer baseInitramfsF.Close()
+	defer baseDistroF.Close()
 
-	finalInitramfsF, err := os.OpenFile(finalDistroPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	finalDistroF, err := os.OpenFile(finalDistroPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
-	defer finalInitramfsF.Close()
+	defer finalDistroF.Close()
 
-	if _, err := io.Copy(finalInitramfsF, baseInitramfsF); err != nil {
-		return errors.WithStack(err)
-	}
-
-	if _, err := finalInitramfsF.Seek(0, io.SeekStart); err != nil {
-		return errors.WithStack(err)
+	if _, err := io.Copy(finalDistroF, baseDistroF); err != nil {
+		return "", errors.WithStack(err)
 	}
 
-	tr := tar.NewReader(finalInitramfsF)
+	if _, err := finalDistroF.Seek(0, io.SeekStart); err != nil {
+		return "", errors.WithStack(err)
+	}
+
+	tr := tar.NewReader(finalDistroF)
 
 	var lastFileSize, lastStreamPos int64
 loop:
@@ -109,11 +79,11 @@ loop:
 		case errors.Is(err, io.EOF):
 			break loop
 		default:
-			return errors.WithStack(err)
+			return "", errors.WithStack(err)
 		}
-		lastStreamPos, err = finalInitramfsF.Seek(0, io.SeekCurrent)
+		lastStreamPos, err = finalDistroF.Seek(0, io.SeekCurrent)
 		if err != nil {
-			return errors.WithStack(err)
+			return "", errors.WithStack(err)
 		}
 		lastFileSize = hdr.Size
 	}
@@ -124,25 +94,25 @@ loop:
 	if (newOffset % blockSize) != 0 {
 		newOffset += blockSize - (newOffset % blockSize)
 	}
-	if _, err := finalInitramfsF.Seek(newOffset, io.SeekStart); err != nil {
-		return errors.WithStack(err)
+	if _, err := finalDistroF.Seek(newOffset, io.SeekStart); err != nil {
+		return "", errors.WithStack(err)
 	}
 
-	tw := tar.NewWriter(finalInitramfsF)
+	tw := tar.NewWriter(finalDistroF)
 	defer tw.Close()
 
 	kernelF, err := os.Open(kernelPath)
 	if err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
 	defer kernelF.Close()
 
 	size, err := kernelF.Seek(0, io.SeekEnd)
 	if err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
 	if _, err := kernelF.Seek(0, io.SeekStart); err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
 
 	if err := tw.WriteHeader(&tar.Header{
@@ -151,26 +121,26 @@ loop:
 		Size:     size,
 		Mode:     0o500,
 	}); err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
 
 	if _, err := io.Copy(tw, kernelF); err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
 
 	depF, err := os.Open(depsFile)
 	if err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
 	defer depF.Close()
 
 	depMod := map[string][]string{}
 	if err := json.NewDecoder(depF).Decode(&depMod); err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
 
 	modules := map[string]struct{}{}
-	for _, m := range requiredModules {
+	for _, m := range config.KernelModules {
 		modules[m] = struct{}{}
 	}
 	for m, deps := range depMod {
@@ -187,16 +157,16 @@ loop:
 
 	for _, mName := range install {
 		if err := writeModule(mName, tw); err != nil {
-			return err
+			return "", err
 		}
 	}
 
 	size, err = depF.Seek(0, io.SeekEnd)
 	if err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
 	if _, err := depF.Seek(0, io.SeekStart); err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
 
 	if err := tw.WriteHeader(&tar.Header{
@@ -205,18 +175,21 @@ loop:
 		Size:     size,
 		Mode:     0o400,
 	}); err != nil {
-		return errors.WithStack(err)
+		return "", errors.WithStack(err)
 	}
-	_, err = io.Copy(tw, depF)
-	return errors.WithStack(err)
+	if _, err := io.Copy(tw, depF); err != nil {
+		return "", errors.WithStack(err)
+	}
+
+	return finalDistroPath, nil
 }
 
-func downloadDistro(ctx context.Context, _ types.DepsFunc) error {
+func downloadDistro(ctx context.Context, distro Base) error {
 	if err := os.MkdirAll(filepath.Dir(baseDistroPath), 0o700); err != nil {
 		return errors.WithStack(err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fedoraURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, distro.URL, nil)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -246,19 +219,20 @@ func downloadDistro(ctx context.Context, _ types.DepsFunc) error {
 	}
 
 	checksum := hex.EncodeToString(hasher.Sum(nil))
-	if checksum != fedoraSHA256 {
-		return errors.Errorf("initramfs checksum mismatch, expected: %q, got: %q", fedoraSHA256, checksum)
+	if checksum != distro.SHA256 {
+		return errors.Errorf("distro base checksum mismatch, expected: %q, got: %q", distro.SHA256, checksum)
 	}
 
 	return nil
 }
 
-func downloadKernel(ctx context.Context, _ types.DepsFunc) error {
+func downloadKernel(ctx context.Context, kernelPackage Package) error {
 	if err := os.MkdirAll(filepath.Dir(kernelPath), 0o700); err != nil {
 		return errors.WithStack(err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, kernelCoreURL, nil)
+	kernelPackageURL := packageURL(kernelPackage)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, kernelPackageURL, nil)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -268,7 +242,9 @@ func downloadKernel(ctx context.Context, _ types.DepsFunc) error {
 	}
 	defer resp.Body.Close()
 
-	rpm, err := rpmutils.ReadRpm(resp.Body)
+	hasher := sha256.New()
+
+	rpm, err := rpmutils.ReadRpm(io.TeeReader(resp.Body, hasher))
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -287,32 +263,35 @@ func downloadKernel(ctx context.Context, _ types.DepsFunc) error {
 			return errors.WithStack(err)
 		}
 
-		if filepath.Base(fInfo.Name()) != kernelFile || pReader.IsLink() {
-			continue
+		if filepath.Base(fInfo.Name()) == kernelFile && !pReader.IsLink() {
+			break
 		}
-
-		vmlinuzF, err := os.OpenFile(kernelPath, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o700)
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		defer vmlinuzF.Close()
-
-		hasher := sha256.New()
-
-		if _, err := io.Copy(vmlinuzF, io.TeeReader(pReader, hasher)); err != nil {
-			return errors.WithStack(err)
-		}
-
-		checksum := hex.EncodeToString(hasher.Sum(nil))
-		if checksum != kernelSHA256 {
-			return errors.Errorf("kernel checksum mismatch, expected: %q, got: %q", kernelSHA256, checksum)
-		}
-
-		return nil
 	}
+
+	vmlinuzF, err := os.OpenFile(kernelPath, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o700)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer vmlinuzF.Close()
+
+	if _, err := io.Copy(vmlinuzF, pReader); err != nil {
+		return errors.WithStack(err)
+	}
+
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return errors.WithStack(err)
+	}
+
+	checksum := hex.EncodeToString(hasher.Sum(nil))
+	if checksum != kernelPackage.SHA256 {
+		return errors.Errorf("rpm %q checksum mismatch, expected: %q, got: %q", kernelPackageURL,
+			kernelPackage.SHA256, checksum)
+	}
+
+	return nil
 }
 
-func downloadModules(ctx context.Context, _ types.DepsFunc) error {
+func downloadModules(ctx context.Context, packages []Package, modules []string) error {
 	if err := os.MkdirAll(moduleDir, 0o700); err != nil {
 		return errors.WithStack(err)
 	}
@@ -320,8 +299,9 @@ func downloadModules(ctx context.Context, _ types.DepsFunc) error {
 	providers := map[string]string{}
 	requires := map[string][]string{}
 
-	for _, m := range modulePackages {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.URL, nil)
+	for _, p := range packages {
+		mURL := packageURL(p)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, mURL, nil)
 		if err != nil {
 			return errors.WithStack(err)
 		}
@@ -384,8 +364,8 @@ func downloadModules(ctx context.Context, _ types.DepsFunc) error {
 		}
 
 		checksum := hex.EncodeToString(hasher.Sum(nil))
-		if checksum != m.SHA256 {
-			return errors.Errorf("rpm %q checksum mismatch, expected: %q, got: %q", m.URL, m.SHA256, checksum)
+		if checksum != p.SHA256 {
+			return errors.Errorf("rpm %q checksum mismatch, expected: %q, got: %q", mURL, p.SHA256, checksum)
 		}
 	}
 
@@ -407,7 +387,7 @@ func downloadModules(ctx context.Context, _ types.DepsFunc) error {
 
 	included := map[string]struct{}{}
 	finalDependencies := map[string][]string{}
-	stack := append([]string{}, requiredModules...)
+	stack := append([]string{}, modules...)
 	for len(stack) > 0 {
 		mName := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
@@ -510,4 +490,19 @@ func writeModule(name string, tw *tar.Writer) error {
 
 	_, err = io.Copy(tw, mf)
 	return errors.WithStack(err)
+}
+
+func packageURL(p Package) string {
+	category := p.Name
+	if pos := strings.Index(category, "-"); pos >= 0 {
+		category = category[:pos]
+	}
+	versionParts := strings.Split(p.Version, "-")
+	version := versionParts[0]
+	props := strings.Split(versionParts[1], ".")
+
+	return fmt.Sprintf(
+		"https://kojipkgs.fedoraproject.org/packages/%[1]s/%[3]s/%[4]s.%[5]s/%[6]s/%[2]s-%[3]s-%[4]s.%[5]s.%[6]s.rpm",
+		category, p.Name, version, props[0], props[1], props[2],
+	)
 }
