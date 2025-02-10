@@ -15,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/pkg/errors"
+	"github.com/pkg/sftp"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 
@@ -36,39 +37,43 @@ func Service(authorizedKeys ...string) host.Configurator {
 	return cloudless.Join(
 		cloudless.Firewall(firewall.OpenV4TCPPort(port)),
 		cloudless.Service("ssh", parallel.Fail, func(ctx context.Context) error {
-			if len(authorizedKeys) == 0 {
-				return errors.New("no authorized keys specified")
-			}
-
-			authKeys := make([][]byte, 0, len(authorizedKeys))
-			for _, k := range authorizedKeys {
-				key, err := base64.RawStdEncoding.DecodeString(k)
-				if err != nil {
-					return errors.Wrapf(err, "failed to base64 decode key %q", k)
-				}
-				authKeys = append(authKeys, key)
-			}
-
-			_, privKey, err := ed25519.GenerateKey(nil)
-			if err != nil {
-				return errors.WithStack(err)
-			}
-
-			signer, err := ssh.NewSignerFromKey(privKey)
-			if err != nil {
-				return errors.WithStack(err)
-			}
-
-			for {
-				if err := runServer(ctx, signer, authKeys); err != nil {
-					if errors.Is(err, ctx.Err()) {
-						return err
-					}
-					logger.Get(ctx).Error("SSH server failed", zap.Error(err))
-				}
-			}
+			return run(ctx, authorizedKeys)
 		}),
 	)
+}
+
+func run(ctx context.Context, authorizedKeys []string) error {
+	if len(authorizedKeys) == 0 {
+		return errors.New("no authorized keys specified")
+	}
+
+	authKeys := make([][]byte, 0, len(authorizedKeys))
+	for _, k := range authorizedKeys {
+		key, err := base64.RawStdEncoding.DecodeString(k)
+		if err != nil {
+			return errors.Wrapf(err, "failed to base64 decode key %q", k)
+		}
+		authKeys = append(authKeys, key)
+	}
+
+	_, privKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	signer, err := ssh.NewSignerFromKey(privKey)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	for {
+		if err := runServer(ctx, signer, authKeys); err != nil {
+			if errors.Is(err, ctx.Err()) {
+				return err
+			}
+			logger.Get(ctx).Error("SSH server failed", zap.Error(err))
+		}
+	}
 }
 
 func runServer(ctx context.Context, signer ssh.Signer, authKeys [][]byte) error {
@@ -185,6 +190,7 @@ func client(ctx context.Context, conn net.Conn, config *ssh.ServerConfig) error 
 	})
 }
 
+//nolint:gocyclo
 func sessionHandler(ctx context.Context, chReq ssh.NewChannel, reqCh <-chan *ssh.Request) error {
 	ch, reqCh, err := chReq.Accept()
 	if err != nil {
@@ -196,6 +202,39 @@ func sessionHandler(ctx context.Context, chReq ssh.NewChannel, reqCh <-chan *ssh
 		var ptm, pts *os.File
 		for req := range reqCh {
 			switch req.Type {
+			case "subsystem":
+				if len(req.Payload) < 4 {
+					return errors.New("invalid payload")
+				}
+				sysLen := binary.BigEndian.Uint32(req.Payload[:4])
+				if uint32(len(req.Payload)) < 4+sysLen {
+					return errors.New("invalid payload")
+				}
+				sys := string(req.Payload[4 : 4+sysLen])
+
+				switch sys {
+				case "sftp":
+					s, err := sftp.NewServer(ch)
+					if err != nil {
+						return errors.WithStack(err)
+					}
+
+					spawn("sftp", parallel.Exit, func(ctx context.Context) error {
+						return s.Serve()
+					})
+					spawn("watchdog", parallel.Fail, func(ctx context.Context) error {
+						defer ch.Close()
+
+						<-ctx.Done()
+						return errors.WithStack(ctx.Err())
+					})
+				default:
+					if req.WantReply {
+						if err := req.Reply(false, nil); err != nil {
+							return errors.WithStack(err)
+						}
+					}
+				}
 			case "exec":
 				if len(req.Payload) < 4 {
 					return errors.New("invalid payload")
