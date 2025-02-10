@@ -6,6 +6,7 @@ import (
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/host/firewall"
+	"github.com/outofforest/cloudless/pkg/kernel"
 	"github.com/outofforest/cloudless/pkg/pxe/dhcp6"
 	"github.com/outofforest/cloudless/pkg/pxe/tftp"
 	"github.com/outofforest/parallel"
@@ -18,6 +19,8 @@ func Service(efiDevPath string) host.Configurator {
 			firewall.OpenV6UDPPort(dhcp6.Port),
 			firewall.OpenV6UDPPort(tftp.Port),
 		),
+		// VFAT is loaded to enable EFI partition mounting, to update the bootloader.
+		cloudless.KernelModules(kernel.Module{Name: "vfat"}),
 		cloudless.Service("pxe", parallel.Fail, func(ctx context.Context) error {
 			return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 				spawn("dhcp6", parallel.Fail, dhcp6.Run)
