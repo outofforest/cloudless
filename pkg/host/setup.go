@@ -873,9 +873,7 @@ func configureHugePages(hugePages uint64) error {
 func configureMounts(mounts []mountConfig) error {
 	for _, m := range mounts {
 		info, err := os.Stat(m.Source)
-		switch {
-		case err == nil:
-		case os.IsNotExist(err):
+		if err != nil {
 			if err := os.MkdirAll(m.Source, 0o700); err != nil {
 				return errors.WithStack(err)
 			}
@@ -884,12 +882,24 @@ func configureMounts(mounts []mountConfig) error {
 			if err != nil {
 				return errors.WithStack(err)
 			}
-		case err != nil:
-			return errors.WithStack(err)
+		}
+
+		var flags uintptr
+		fsType := ""
+
+		// Is it a block device?
+		var blockDev bool
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+			blockDev = stat.Mode&syscall.S_IFBLK == syscall.S_IFBLK
+			if blockDev {
+				fsType = "ext4"
+			} else {
+				flags = syscall.MS_BIND | syscall.MS_PRIVATE
+			}
 		}
 
 		//nolint:nestif
-		if info.IsDir() {
+		if info.IsDir() || blockDev {
 			if err := os.MkdirAll(m.Target, 0o700); err != nil {
 				return errors.WithStack(err)
 			}
@@ -911,13 +921,12 @@ func configureMounts(mounts []mountConfig) error {
 				return err
 			}
 		}
-		if err := syscall.Mount(m.Source, m.Target, "",
-			syscall.MS_BIND|syscall.MS_PRIVATE, ""); err != nil {
+		if err := syscall.Mount(m.Source, m.Target, fsType, flags, ""); err != nil {
 			return errors.WithStack(err)
 		}
 		if !m.Writable {
-			if err := syscall.Mount(m.Source, m.Target, "",
-				syscall.MS_BIND|syscall.MS_PRIVATE|syscall.MS_REMOUNT|syscall.MS_RDONLY, ""); err != nil {
+			if err := syscall.Mount(m.Source, m.Target, fsType, flags|syscall.MS_REMOUNT|syscall.MS_RDONLY,
+				""); err != nil {
 				return errors.WithStack(err)
 			}
 		}

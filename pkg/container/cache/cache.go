@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,7 +50,7 @@ var (
 )
 
 // Service returns new yum repo service.
-func Service(repoRoot string) host.Configurator {
+func Service(repoRoot string, release uint64) host.Configurator {
 	var c *host.Configuration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
@@ -60,16 +61,51 @@ func Service(repoRoot string) host.Configurator {
 				return nil
 			}
 
-			return run(ctx, repoRoot, images)
+			repoDir := filepath.Join(repoRoot, strconv.FormatUint(release, 10))
+			return run(ctx, repoDir, images)
 		}),
 	)
 }
 
-func run(ctx context.Context, repoRoot string, images []string) error {
+func run(ctx context.Context, repoDir string, images []string) error {
+	if err := createRepo(ctx, repoDir, images); err != nil {
+		return err
+	}
+
+	l, err := net.ListenTCP("tcp", &net.TCPAddr{Port: Port})
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer l.Close()
+
+	server := thttp.NewServer(l, thttp.Config{
+		Handler: http.FileServer(http.Dir(repoDir)),
+	})
+	return server.Run(ctx)
+}
+
+func createRepo(ctx context.Context, repoDir string, images []string) error {
+	repoInfo, err := os.Stat(repoDir)
+	if err == nil && repoInfo.IsDir() {
+		return nil
+	}
+
+	if err := os.RemoveAll(repoDir); err != nil {
+		return errors.WithStack(err)
+	}
+
+	repoDirTmp := repoDir + ".tmp"
+	if err := os.RemoveAll(repoDirTmp); err != nil {
+		return errors.WithStack(err)
+	}
+	if err := os.MkdirAll(repoDirTmp, 0o700); err != nil {
+		return errors.WithStack(err)
+	}
+
 	for _, imageTag := range images {
 		repoURL, imageTag := resolveImageTag(imageTag)
 
-		m, authToken, err := fetchManifest(ctx, repoRoot, repoURL, imageTag)
+		m, authToken, err := fetchManifest(ctx, repoDirTmp, repoURL, imageTag)
 		if err != nil {
 			return err
 		}
@@ -86,7 +122,7 @@ func run(ctx context.Context, repoRoot string, images []string) error {
 			return err
 		}
 
-		authToken, err = fetchBlob(ctx, repoRoot, repoURL, authToken, image, m.Config.Digest)
+		authToken, err = fetchBlob(ctx, repoDirTmp, repoURL, authToken, image, m.Config.Digest)
 		if err != nil {
 			return err
 		}
@@ -96,23 +132,14 @@ func run(ctx context.Context, repoRoot string, images []string) error {
 				return errors.Errorf("unsupported layer media type %s for layer", layer.MediaType)
 			}
 
-			authToken, err = fetchBlob(ctx, repoRoot, repoURL, authToken, image, layer.Digest)
+			authToken, err = fetchBlob(ctx, repoDirTmp, repoURL, authToken, image, layer.Digest)
 			if err != nil {
 				return err
 			}
 		}
 	}
 
-	l, err := net.ListenTCP("tcp", &net.TCPAddr{Port: Port})
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer l.Close()
-
-	server := thttp.NewServer(l, thttp.Config{
-		Handler: http.FileServer(http.Dir(repoRoot)),
-	})
-	return server.Run(ctx)
+	return errors.WithStack(os.Rename(repoDirTmp, repoDir))
 }
 
 func fetchManifest(ctx context.Context, repoRoot, repoURL, imageTag string) (Manifest, string, error) {
