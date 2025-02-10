@@ -32,7 +32,7 @@ func Loader(ctx context.Context, deps types.DepsFunc, config Config) error {
 
 	logger.Get(ctx).Info("Building loader")
 
-	if err := os.RemoveAll(embedDir); err != nil && !os.IsNotExist(err) {
+	if err := os.RemoveAll(embedDir); err != nil {
 		return errors.WithStack(err)
 	}
 	if err := os.MkdirAll(embedDir, 0o700); err != nil {

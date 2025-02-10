@@ -48,18 +48,13 @@ func buildDistro(ctx context.Context, config DistroConfig) (string, error) {
 	configDir := filepath.Join(lo.Must(os.UserCacheDir()), "cloudless/distros", hex.EncodeToString(configHash[:]))
 	initramfsPath := filepath.Join(configDir, initramfsFile)
 
-	_, err = os.Stat(initramfsPath)
-	switch {
-	case err == nil:
+	if _, err := os.Stat(initramfsPath); err == nil {
 		return configDir, nil
-	case errors.Is(err, os.ErrNotExist):
-	default:
-		return "", errors.WithStack(err)
 	}
 
 	logger.Get(ctx).Info("Building distro")
 
-	if err := os.RemoveAll(configDir); err != nil && !os.IsNotExist(err) {
+	if err := os.RemoveAll(configDir); err != nil {
 		return "", errors.WithStack(err)
 	}
 
