@@ -27,6 +27,7 @@ var config = Config{
 			},
 		},
 		KernelModules: []string{
+			"vfat",
 			"tun",
 			"kvm-intel",
 			"virtio-net",
