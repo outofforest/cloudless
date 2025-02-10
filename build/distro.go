@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cavaliergopher/cpio"
 	"github.com/pkg/errors"
 	"github.com/samber/lo"
 	"github.com/sassoftware/go-rpmutils"
@@ -28,6 +29,7 @@ const (
 	configFile       = "config.json"
 	baseDistroFile   = "distro.base.tar"
 	distroFile       = "distro.tar"
+	initramfsFile    = "initramfs"
 	kernelFile       = "vmlinuz"
 	moduleDir        = "modules"
 	depsFile         = "deps.json"
@@ -44,9 +46,9 @@ func buildDistro(ctx context.Context, config DistroConfig) (string, error) {
 	}
 	configHash := sha256.Sum256(configMarshalled)
 	configDir := filepath.Join(lo.Must(os.UserCacheDir()), "cloudless/distros", hex.EncodeToString(configHash[:]))
-	distroPath := filepath.Join(configDir, distroFile)
+	initramfsPath := filepath.Join(configDir, initramfsFile)
 
-	_, err = os.Stat(distroPath)
+	_, err = os.Stat(initramfsPath)
 	switch {
 	case err == nil:
 		return configDir, nil
@@ -102,6 +104,7 @@ func buildDistro(ctx context.Context, config DistroConfig) (string, error) {
 	}
 	defer baseDistroF.Close()
 
+	distroPath := filepath.Join(configDir, distroFile)
 	distroPathTmp := distroPath + ".tmp"
 	finalDistroF, err := os.OpenFile(distroPathTmp, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
@@ -231,6 +234,26 @@ loop:
 	}
 
 	if err := os.Rename(distroPathTmp, distroPath); err != nil {
+		return "", errors.WithStack(err)
+	}
+
+	initramfsPathTmp := initramfsPath + ".tmp"
+	initramfsF, err := os.OpenFile(initramfsPathTmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+	defer initramfsF.Close()
+
+	cW := gzip.NewWriter(initramfsF)
+	defer cW.Close()
+
+	w := cpio.NewWriter(cW)
+	defer w.Close()
+
+	if err := addFile(w, 0o600, distroPath); err != nil {
+		return "", err
+	}
+	if err := os.Rename(initramfsPathTmp, initramfsPath); err != nil {
 		return "", errors.WithStack(err)
 	}
 

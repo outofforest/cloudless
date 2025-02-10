@@ -18,8 +18,7 @@ import (
 )
 
 const (
-	embedDir      = "bin/embed"
-	initramfsFile = "initramfs"
+	embedDir = "bin/embed"
 )
 
 // Loader builds UEFI loader for application.
@@ -40,8 +39,8 @@ func Loader(ctx context.Context, deps types.DepsFunc, config Config) error {
 		return errors.WithStack(err)
 	}
 
-	initramfsPath := filepath.Join(embedDir, initramfsFile)
-	if err := buildInitramfs(config, filepath.Join(distroDir, distroFile), initramfsPath); err != nil {
+	if err := buildInitramfs(config, filepath.Join(distroDir, initramfsFile),
+		filepath.Join(embedDir, initramfsFile)); err != nil {
 		return err
 	}
 
@@ -92,28 +91,35 @@ func Loader(ctx context.Context, deps types.DepsFunc, config Config) error {
 	return errors.WithStack(err)
 }
 
-func buildInitramfs(config Config, distroPath, initramfsPath string) error {
-	initramfsPathTmp := initramfsPath + ".tmp"
-	initramfsF, err := os.OpenFile(initramfsPathTmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+func buildInitramfs(config Config, baseInitramfsPath, finalInitramfsPath string) error {
+	baseInitramfsF, err := os.Open(baseInitramfsPath)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	defer initramfsF.Close()
+	defer baseInitramfsF.Close()
 
-	cW := gzip.NewWriter(initramfsF)
+	finalInitramfsPathTmp := finalInitramfsPath + ".tmp"
+	finalInitramfsF, err := os.OpenFile(finalInitramfsPathTmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer finalInitramfsF.Close()
+
+	if _, err := io.Copy(finalInitramfsF, baseInitramfsF); err != nil {
+		return errors.WithStack(err)
+	}
+
+	cW := gzip.NewWriter(finalInitramfsF)
 	defer cW.Close()
 
 	w := cpio.NewWriter(cW)
 	defer w.Close()
 
-	if err := addFile(w, 0o600, distroPath); err != nil {
-		return err
-	}
 	if err := addFile(w, 0o700, config.InitBinPath); err != nil {
 		return err
 	}
 
-	return errors.WithStack(os.Rename(initramfsPathTmp, initramfsPath))
+	return errors.WithStack(os.Rename(finalInitramfsPathTmp, finalInitramfsPath))
 }
 
 func addFile(w *cpio.Writer, mode cpio.FileMode, file string) error {
