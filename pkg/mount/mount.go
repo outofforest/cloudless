@@ -86,6 +86,13 @@ func HostRoot() error {
 		return err
 	}
 
+	if err := os.MkdirAll("/root", 0o750); err != nil {
+		return errors.WithStack(err)
+	}
+	if err := os.Chmod("/root", 0o750); err != nil {
+		return errors.WithStack(err)
+	}
+
 	if err := ProcFS("/proc"); err != nil {
 		return err
 	}
