@@ -13,20 +13,40 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/outofforest/build/v2/pkg/types"
+	"github.com/outofforest/logger"
 	"github.com/outofforest/tools/pkg/tools/zig"
 )
 
 const (
-	initBinPath   = "bin/init"
-	initramfsPath = "bin/embed/initramfs"
+	embedDir      = "bin/embed"
+	initramfsFile = "initramfs"
 )
 
 // Loader builds UEFI loader for application.
 func Loader(ctx context.Context, deps types.DepsFunc, config Config) error {
 	deps(zig.EnsureZig)
 
-	if err := prepareEmbeds(ctx, config); err != nil {
+	distroDir, err := buildDistro(ctx, config.Distro)
+	if err != nil {
 		return err
+	}
+
+	logger.Get(ctx).Info("Building loader")
+
+	if err := os.RemoveAll(embedDir); err != nil && !os.IsNotExist(err) {
+		return errors.WithStack(err)
+	}
+	if err := os.MkdirAll(embedDir, 0o700); err != nil {
+		return errors.WithStack(err)
+	}
+
+	initramfsPath := filepath.Join(embedDir, initramfsFile)
+	if err := buildInitramfs(config, filepath.Join(distroDir, distroFile), initramfsPath); err != nil {
+		return err
+	}
+
+	if err := os.Symlink(filepath.Join(distroDir, kernelFile), filepath.Join(embedDir, kernelFile)); err != nil {
+		return errors.WithStack(err)
 	}
 
 	if err := zig.Build(ctx, deps, zig.BuildConfig{
@@ -72,13 +92,9 @@ func Loader(ctx context.Context, deps types.DepsFunc, config Config) error {
 	return errors.WithStack(err)
 }
 
-func prepareEmbeds(ctx context.Context, config Config) error {
-	distroPath, err := buildDistro(ctx, config)
-	if err != nil {
-		return err
-	}
-
-	initramfsF, err := os.OpenFile(initramfsPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+func buildInitramfs(config Config, distroPath, initramfsPath string) error {
+	initramfsPathTmp := initramfsPath + ".tmp"
+	initramfsF, err := os.OpenFile(initramfsPathTmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -93,7 +109,11 @@ func prepareEmbeds(ctx context.Context, config Config) error {
 	if err := addFile(w, 0o600, distroPath); err != nil {
 		return err
 	}
-	return addFile(w, 0o700, config.InitBinPath)
+	if err := addFile(w, 0o700, config.InitBinPath); err != nil {
+		return err
+	}
+
+	return errors.WithStack(os.Rename(initramfsPathTmp, initramfsPath))
 }
 
 func addFile(w *cpio.Writer, mode cpio.FileMode, file string) error {

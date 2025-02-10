@@ -8,6 +8,8 @@ import (
 	"github.com/outofforest/tools/pkg/tools/golang"
 )
 
+const initBinPath = "bin/init"
+
 func buildInit(ctx context.Context, deps types.DepsFunc) error {
 	deps(golang.EnsureGo, golang.Generate)
 

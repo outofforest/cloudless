@@ -20,31 +20,79 @@ import (
 	"github.com/samber/lo"
 	"github.com/sassoftware/go-rpmutils"
 	"github.com/ulikunitz/xz"
+
+	"github.com/outofforest/logger"
 )
 
 const (
-	baseDistroPath  = "bin/distro/distro.base.tar"
-	finalDistroPath = "bin/distro/distro.tar"
-
+	configFile       = "config.json"
+	baseDistroFile   = "distro.base.tar"
+	distroFile       = "distro.tar"
 	kernelFile       = "vmlinuz"
-	kernelPath       = "bin/embed/vmlinuz"
-	kernelTargetPath = "/boot/vmlinuz"
-
+	moduleDir        = "modules"
+	depsFile         = "deps.json"
+	kernelTargetPath = "/boot/" + kernelFile
 	modulePathPrefix = "/lib/modules/"
-	moduleDir        = "bin/distro/modules"
 	moduleTargetDir  = "/usr/lib/modules"
-	depsFile         = "bin/distro/deps.json"
 )
 
 //nolint:gocyclo
-func buildDistro(ctx context.Context, config Config) (string, error) {
-	if err := downloadDistro(ctx, config.Base); err != nil {
+func buildDistro(ctx context.Context, config DistroConfig) (string, error) {
+	configMarshalled, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+	configHash := sha256.Sum256(configMarshalled)
+	configDir := filepath.Join(lo.Must(os.UserCacheDir()), "cloudless/distros", hex.EncodeToString(configHash[:]))
+	distroPath := filepath.Join(configDir, distroFile)
+
+	_, err = os.Stat(distroPath)
+	switch {
+	case err == nil:
+		return configDir, nil
+	case errors.Is(err, os.ErrNotExist):
+	default:
+		return "", errors.WithStack(err)
+	}
+
+	logger.Get(ctx).Info("Building distro")
+
+	if err := os.RemoveAll(configDir); err != nil && !os.IsNotExist(err) {
+		return "", errors.WithStack(err)
+	}
+
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		return "", errors.WithStack(err)
+	}
+
+	configBytes, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+	configPath := filepath.Join(configDir, configFile)
+	configPathTmp := configPath + ".tmp"
+
+	if err := os.WriteFile(configPathTmp, configBytes, 0o600); err != nil {
+		return "", errors.WithStack(err)
+	}
+	if err := os.Rename(configPathTmp, configPath); err != nil {
+		return "", errors.WithStack(err)
+	}
+
+	baseDistroPath := filepath.Join(configDir, baseDistroFile)
+	if err := downloadDistro(ctx, config.Base, baseDistroPath); err != nil {
 		return "", err
 	}
-	if err := downloadKernel(ctx, config.KernelPackage); err != nil {
+
+	kernelPath := filepath.Join(configDir, kernelFile)
+	if err := downloadKernel(ctx, config.KernelPackage, kernelPath); err != nil {
 		return "", err
 	}
-	if err := downloadModules(ctx, config.KernelModulePackages, config.KernelModules); err != nil {
+
+	moduleDir := filepath.Join(configDir, moduleDir)
+	depsPath := filepath.Join(configDir, depsFile)
+	if err := downloadModules(ctx, config.KernelModulePackages, config.KernelModules,
+		moduleDir, depsPath); err != nil {
 		return "", err
 	}
 
@@ -54,7 +102,8 @@ func buildDistro(ctx context.Context, config Config) (string, error) {
 	}
 	defer baseDistroF.Close()
 
-	finalDistroF, err := os.OpenFile(finalDistroPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	distroPathTmp := distroPath + ".tmp"
+	finalDistroF, err := os.OpenFile(distroPathTmp, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
@@ -128,7 +177,7 @@ loop:
 		return "", errors.WithStack(err)
 	}
 
-	depF, err := os.Open(depsFile)
+	depF, err := os.Open(depsPath)
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
@@ -156,7 +205,7 @@ loop:
 	sort.Strings(install)
 
 	for _, mName := range install {
-		if err := writeModule(mName, tw); err != nil {
+		if err := writeModule(mName, tw, moduleDir); err != nil {
 			return "", err
 		}
 	}
@@ -171,7 +220,7 @@ loop:
 
 	if err := tw.WriteHeader(&tar.Header{
 		Typeflag: tar.TypeReg,
-		Name:     filepath.Join(moduleTargetDir, filepath.Base(depsFile)),
+		Name:     filepath.Join(moduleTargetDir, depsFile),
 		Size:     size,
 		Mode:     0o400,
 	}); err != nil {
@@ -181,11 +230,15 @@ loop:
 		return "", errors.WithStack(err)
 	}
 
-	return finalDistroPath, nil
+	if err := os.Rename(distroPathTmp, distroPath); err != nil {
+		return "", errors.WithStack(err)
+	}
+
+	return configDir, nil
 }
 
-func downloadDistro(ctx context.Context, distro Base) error {
-	if err := os.MkdirAll(filepath.Dir(baseDistroPath), 0o700); err != nil {
+func downloadDistro(ctx context.Context, distro Base, path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return errors.WithStack(err)
 	}
 
@@ -199,7 +252,8 @@ func downloadDistro(ctx context.Context, distro Base) error {
 	}
 	defer resp.Body.Close()
 
-	initramfsF, err := os.OpenFile(baseDistroPath, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o600)
+	pathTmp := path + ".tmp"
+	initramfsF, err := os.OpenFile(pathTmp, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -223,11 +277,11 @@ func downloadDistro(ctx context.Context, distro Base) error {
 		return errors.Errorf("distro base checksum mismatch, expected: %q, got: %q", distro.SHA256, checksum)
 	}
 
-	return nil
+	return errors.WithStack(os.Rename(pathTmp, path))
 }
 
-func downloadKernel(ctx context.Context, kernelPackage Package) error {
-	if err := os.MkdirAll(filepath.Dir(kernelPath), 0o700); err != nil {
+func downloadKernel(ctx context.Context, kernelPackage Package, path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return errors.WithStack(err)
 	}
 
@@ -268,7 +322,8 @@ func downloadKernel(ctx context.Context, kernelPackage Package) error {
 		}
 	}
 
-	vmlinuzF, err := os.OpenFile(kernelPath, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o700)
+	pathTmp := path + ".tmp"
+	vmlinuzF, err := os.OpenFile(pathTmp, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o700)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -288,10 +343,10 @@ func downloadKernel(ctx context.Context, kernelPackage Package) error {
 			kernelPackage.SHA256, checksum)
 	}
 
-	return nil
+	return errors.WithStack(os.Rename(pathTmp, path))
 }
 
-func downloadModules(ctx context.Context, packages []Package, modules []string) error {
+func downloadModules(ctx context.Context, packages []Package, modules []string, moduleDir, depsFile string) error {
 	if err := os.MkdirAll(moduleDir, 0o700); err != nil {
 		return errors.WithStack(err)
 	}
@@ -342,7 +397,7 @@ func downloadModules(ctx context.Context, packages []Package, modules []string) 
 				continue
 			}
 
-			moduleName, providedSymbols, importedSymbols, err := storeModule(fileName, pReader)
+			moduleName, providedSymbols, importedSymbols, err := storeModule(fileName, pReader, moduleDir)
 			if err != nil {
 				return err
 			}
@@ -406,10 +461,17 @@ func downloadModules(ctx context.Context, packages []Package, modules []string) 
 		}
 	}
 
-	return errors.WithStack(os.WriteFile(depsFile, lo.Must(json.Marshal(finalDependencies)), 0o600))
+	depsFileTmp := depsFile + ".tmp"
+
+	if err := errors.WithStack(os.WriteFile(depsFileTmp,
+		lo.Must(json.MarshalIndent(finalDependencies, "", "  ")), 0o600)); err != nil {
+		return errors.WithStack(err)
+	}
+
+	return errors.WithStack(os.Rename(depsFileTmp, depsFile))
 }
 
-func storeModule(fileName string, r io.Reader) (string, []string, []string, error) {
+func storeModule(fileName string, r io.Reader, moduleDir string) (string, []string, []string, error) {
 	xr, err := xz.NewReader(r)
 	if err != nil {
 		return "", nil, nil, errors.WithStack(err)
@@ -417,7 +479,9 @@ func storeModule(fileName string, r io.Reader) (string, []string, []string, erro
 
 	fileName = strings.ReplaceAll(strings.TrimSuffix(fileName, ".xz"), "_", "-")
 	moduleName := strings.TrimSuffix(fileName, ".ko")
-	modF, err := os.OpenFile(filepath.Join(moduleDir, fileName), os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0o600)
+	modulePath := filepath.Join(moduleDir, fileName)
+	modulePathTmp := modulePath + ".tmp"
+	modF, err := os.OpenFile(modulePathTmp, os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return "", nil, nil, errors.WithStack(err)
 	}
@@ -458,10 +522,14 @@ func storeModule(fileName string, r io.Reader) (string, []string, []string, erro
 		}
 	}
 
+	if err := os.Rename(modulePathTmp, modulePath); err != nil {
+		return "", nil, nil, errors.WithStack(err)
+	}
+
 	return moduleName, providedSymbols, importedSymbols, nil
 }
 
-func writeModule(name string, tw *tar.Writer) error {
+func writeModule(name string, tw *tar.Writer, moduleDir string) error {
 	fileName := name + ".ko"
 	dstPath := filepath.Join(moduleTargetDir, fileName)
 
