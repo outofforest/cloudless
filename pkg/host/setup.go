@@ -34,8 +34,14 @@ import (
 	"github.com/outofforest/parallel"
 )
 
-// ContainerEnvVar is used to set container name.
-const ContainerEnvVar = "CLOUDLESS_CONTAINER"
+const (
+	// ContainerEnvVar is used to set container name.
+	ContainerEnvVar = "CLOUDLESS_CONTAINER"
+
+	filesystem = "btrfs"
+	// https://btrfs.readthedocs.io/en/latest/Administration.html#btrfs-specific-mount-options
+	btrfsOptions = "commit=1,flushoncommit,usebackuproot"
+)
 
 var (
 	// ErrPowerOff means that host should be powered off.
@@ -394,11 +400,17 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 
 	boxMetrics.BoxStarted()
 
-	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+	err := parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		if sendLogsTask != nil {
 			spawn("logSender", parallel.Fail, sendLogsTask)
 		}
-		spawn("", parallel.Fail, func(ctx context.Context) error {
+		spawn("", parallel.Fail, func(ctx context.Context) (retErr error) {
+			defer func() {
+				if err := unmount(); err != nil {
+					retErr = err
+				}
+			}()
+
 			//nolint:nestif
 			if !cfg.isContainer {
 				if cfg.requireVirt {
@@ -476,18 +488,19 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 			if err := runPrepares(ctx, cfg.prepare); err != nil {
 				return err
 			}
-			err := runServices(ctx, cfg.services)
-			switch {
-			case errors.Is(err, ErrPowerOff):
-				return errors.WithStack(syscall.Reboot(syscall.LINUX_REBOOT_CMD_POWER_OFF))
-			case errors.Is(err, ErrReboot):
-				return errors.WithStack(syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART))
-			default:
-				return err
-			}
+			return runServices(ctx, cfg.services)
 		})
 		return nil
 	})
+
+	switch {
+	case errors.Is(err, ErrPowerOff):
+		return errors.WithStack(syscall.Reboot(syscall.LINUX_REBOOT_CMD_POWER_OFF))
+	case errors.Is(err, ErrReboot):
+		return errors.WithStack(syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART))
+	default:
+		return err
+	}
 }
 
 // ConfigureKernelModules loads kernel modules.
@@ -885,14 +898,15 @@ func configureMounts(mounts []mountConfig) error {
 		}
 
 		var flags uintptr
-		fsType := ""
+		var fsType, fsOptions string
 
 		// Is it a block device?
 		var blockDev bool
 		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
 			blockDev = stat.Mode&syscall.S_IFBLK == syscall.S_IFBLK
 			if blockDev {
-				fsType = "ext4"
+				fsType = filesystem
+				fsOptions = btrfsOptions
 			} else {
 				flags = syscall.MS_BIND | syscall.MS_PRIVATE
 			}
@@ -921,7 +935,7 @@ func configureMounts(mounts []mountConfig) error {
 				return err
 			}
 		}
-		if err := syscall.Mount(m.Source, m.Target, fsType, flags, ""); err != nil {
+		if err := syscall.Mount(m.Source, m.Target, fsType, flags, fsOptions); err != nil {
 			return errors.WithStack(err)
 		}
 		if !m.Writable {
@@ -975,4 +989,44 @@ func pruneVirt() error {
 
 func isContainer() bool {
 	return os.Getenv(ContainerEnvVar) != ""
+}
+
+func unmount() error {
+	mountsRaw, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return errors.Wrap(err, "reading /proc/mounts failed")
+	}
+
+	final := []string{}
+	for _, mount := range strings.Split(string(mountsRaw), "\n") {
+		props := strings.SplitN(mount, " ", 4)
+		if len(props) < 2 {
+			// last empty line
+			break
+		}
+		mountPoint := props[1]
+		mountType := props[2]
+		if mountPoint == "/" {
+			// Managed by vmlinuz.
+			continue
+		}
+
+		switch mountType {
+		case "proc", "sysfs", "devtmpfs":
+			// special mounts, unmounting them at the end
+			final = append(final, mountPoint)
+		default:
+			if err := syscall.Unmount(mountPoint, 0); err != nil {
+				return errors.Wrapf(err, "unmounting failed: %s", mountPoint)
+			}
+		}
+	}
+
+	for _, mountPoint := range final {
+		if err := syscall.Unmount(mountPoint, 0); err != nil {
+			return errors.Wrapf(err, "unmounting failed: %s", mountPoint)
+		}
+	}
+
+	return nil
 }
