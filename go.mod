@@ -49,6 +49,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dennwc/varint v1.0.0 // indirect
+	github.com/digitalocean/go-libvirt v0.0.0-20250207191401-950a7b2d7eaf // indirect
 	github.com/djherbis/times v1.6.0 // indirect
 	github.com/elliotwutingfeng/asciiset v0.0.0-20240214025120-24af97c84155 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -109,4 +110,5 @@ require (
 	k8s.io/client-go v0.31.3 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8 // indirect
+	libvirt.org/go/libvirtxml v1.11000.1 // indirect
 )

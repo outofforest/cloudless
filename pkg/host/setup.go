@@ -16,8 +16,11 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/cavaliergopher/cpio"
+	"github.com/digitalocean/go-libvirt"
+	"github.com/digitalocean/go-libvirt/socket/dialers"
 	"github.com/google/nftables"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,6 +31,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/host/zombie"
 	"github.com/outofforest/cloudless/pkg/kernel"
 	"github.com/outofforest/cloudless/pkg/mount"
+	"github.com/outofforest/cloudless/pkg/tcontext"
 	"github.com/outofforest/libexec"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/logger/remote"
@@ -41,6 +45,8 @@ const (
 	filesystem = "btrfs"
 	// https://btrfs.readthedocs.io/en/latest/Administration.html#btrfs-specific-mount-options
 	btrfsOptions = "commit=1,flushoncommit,usebackuproot"
+
+	qemuSocket = "/var/run/libvirt/virtqemud-sock"
 )
 
 var (
@@ -965,12 +971,37 @@ func setupVirt(c *Configuration) {
 				return errors.WithStack(err)
 			}
 
+			ctxDaemonsCh := make(chan func(), 1)
 			return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
-				for _, c := range []string{"virtqemud", "virtlogd", "virtstoraged", "virtnetworkd", "virtnodedevd"} {
-					spawn(c, parallel.Fail, func(ctx context.Context) error {
-						return libexec.Exec(ctx, exec.Command(filepath.Join("/usr/sbin", c)))
+				spawn("supervisor", parallel.Fail, func(ctx context.Context) error {
+					select {
+					case <-ctx.Done():
+						return errors.WithStack(ctx.Err())
+					case cancel := <-ctxDaemonsCh:
+						defer cancel()
+					}
+
+					<-ctx.Done()
+
+					if err := stopVMs(tcontext.Reopen(ctx)); err != nil {
+						return err
+					}
+
+					return errors.WithStack(ctx.Err())
+				})
+				spawn("daemons", parallel.Fail, func(ctx context.Context) error {
+					ctx, cancel := context.WithCancel(tcontext.Reopen(ctx))
+					ctxDaemonsCh <- cancel
+					return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+						for _, c := range []string{"virtqemud", "virtlogd", "virtstoraged", "virtnetworkd", "virtnodedevd"} {
+							spawn(c, parallel.Fail, func(ctx context.Context) error {
+								return libexec.Exec(ctx, exec.Command(filepath.Join("/usr/sbin", c)))
+							})
+						}
+
+						return nil
 					})
-				}
+				})
 
 				return nil
 			})
@@ -1029,4 +1060,58 @@ func unmount() error {
 	}
 
 	return nil
+}
+
+func stopVMs(ctx context.Context) error {
+	lv := libvirt.NewWithDialer(dialers.NewLocal(dialers.WithSocket(qemuSocket)))
+	defer func() {
+		_ = lv.Disconnect()
+	}()
+
+	if err := lv.Connect(); err != nil {
+		return errors.WithStack(err)
+	}
+
+	domains, _, err := lv.ConnectListAllDomains(1,
+		libvirt.ConnectListDomainsActive|libvirt.ConnectListDomainsInactive)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+		for _, d := range domains {
+			spawn("stopVM", parallel.Continue, func(ctx context.Context) error {
+				log := logger.Get(ctx)
+
+				for trial := 0; ; trial++ {
+					active, err := lv.DomainIsActive(d)
+					if err != nil {
+						if libvirt.IsNotFound(err) {
+							return nil
+						}
+						return errors.WithStack(err)
+					}
+
+					if active == 0 {
+						return nil
+					}
+
+					err = lv.DomainShutdown(d)
+					switch {
+					case err == nil:
+						if trial%10 == 0 {
+							log.Info("VM is still running", zap.String("vm", d.Name))
+						}
+						<-time.After(time.Second)
+					case libvirt.IsNotFound(err):
+						return nil
+					default:
+						return errors.WithStack(err)
+					}
+				}
+			})
+		}
+
+		return nil
+	})
 }
