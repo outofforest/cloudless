@@ -6,6 +6,7 @@ require (
 	github.com/beevik/ntp v1.4.3
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash v1.1.0
+	github.com/digitalocean/go-libvirt v0.0.0-20250207191401-950a7b2d7eaf
 	github.com/diskfs/go-diskfs v1.5.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4

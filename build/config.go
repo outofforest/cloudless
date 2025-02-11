@@ -1,5 +1,7 @@
 package build
 
+const version = "6.13.1-200.fc41.x86_64"
+
 var config = Config{
 	InitBinPath: initBinPath,
 	Distro: DistroConfig{
@@ -11,19 +13,19 @@ var config = Config{
 		// https://packages.fedoraproject.org
 		KernelPackage: Package{
 			Name:    "kernel-core",
-			Version: "6.12.7-200.fc41.x86_64",
-			SHA256:  "f8b5314f347a8533f864a322a15209c36f164f78a9419a382143a145bcaf1c6f",
+			Version: version,
+			SHA256:  "1ae495e4fafc9efc2ecb4f13a73c87db12c75121b2aab07408c8e0ad69de9c4d",
 		},
 		KernelModulePackages: []Package{
 			{
 				Name:    "kernel-modules-core",
-				Version: "6.12.7-200.fc41.x86_64",
-				SHA256:  "791f222e27395c571319c93eb17cbf391bfbd8955557478e5301152834b3b662",
+				Version: version,
+				SHA256:  "87f687a9b3299c910b350f3c77fa0b5883e15d96b9a2049d5382a5b7c2b2d390",
 			},
 			{
 				Name:    "kernel-modules",
-				Version: "6.12.7-200.fc41.x86_64",
-				SHA256:  "d5d9603ec1bf97b01c30f98992dda9993b8a7cd4f885eb5b732064ec2f6b4936",
+				Version: version,
+				SHA256:  "7a7a1580c1a418de7fef58f4403d5933e679a44612b1a29bf7a1c1c755f488aa",
 			},
 		},
 		KernelModules: []string{
