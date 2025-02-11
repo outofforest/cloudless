@@ -2,6 +2,8 @@ package wire
 
 // MsgRequest is used to request dns record creation for ACME challenges.
 type MsgRequest struct {
+	Provider   string
+	AccountURI string
 	Challenges []Challenge
 }
 

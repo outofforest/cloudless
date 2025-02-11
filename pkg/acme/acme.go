@@ -98,7 +98,7 @@ func run(ctx context.Context, config Config) error {
 				},
 			},
 		},
-		DirectoryURL: config.Directory.URL,
+		DirectoryURL: config.Directory.DirectoryURL,
 	}
 
 	account, err := client.Register(ctx, &goacme.Account{
@@ -216,6 +216,8 @@ func run(ctx context.Context, config Config) error {
 				}
 
 				req := &wire.MsgRequest{
+					Provider:   config.Directory.Provider,
+					AccountURI: account.URI,
 					Challenges: make([]wire.Challenge, 0, len(o.Challenges)),
 				}
 				for _, ch := range o.Challenges {
