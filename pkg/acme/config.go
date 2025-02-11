@@ -20,27 +20,31 @@ type Configurator func(c *Config)
 
 // DirectoryConfig is the config of ACME directory service.
 type DirectoryConfig struct {
-	URL      string
-	Insecure bool
+	Provider     string
+	DirectoryURL string
+	Insecure     bool
 }
 
 var (
 	// LetsEncrypt is the LetsEncrypt production config.
 	LetsEncrypt = DirectoryConfig{
-		URL: "https://acme-v02.api.letsencrypt.org/directory",
+		Provider:     "letsencrypt.org",
+		DirectoryURL: "https://acme-v02.api.letsencrypt.org/directory",
 	}
 
 	// LetsEncryptStaging is the LetsEncrypt staging config.
 	LetsEncryptStaging = DirectoryConfig{
-		URL: "https://acme-staging-v02.api.letsencrypt.org/directory",
+		Provider:     "letsencrypt.org",
+		DirectoryURL: "https://acme-staging-v02.api.letsencrypt.org/directory",
 	}
 )
 
 // Pebble returns directory config for pebble.
 func Pebble(host string) DirectoryConfig {
 	return DirectoryConfig{
-		URL:      tnet.JoinScheme("https", host, pebble.Port) + "/dir",
-		Insecure: true,
+		Provider:     "pebble",
+		DirectoryURL: tnet.JoinScheme("https", host, pebble.Port) + "/dir",
+		Insecure:     true,
 	}
 }
 

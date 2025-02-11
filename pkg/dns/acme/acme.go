@@ -2,6 +2,7 @@ package acme
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 
@@ -36,7 +37,7 @@ func Address(host string) string {
 func NewServer(port uint16) *Server {
 	return &Server{
 		port:       port,
-		challenges: map[string]map[uuid.UUID]string{},
+		challenges: map[string]map[uuid.UUID]acmeRecord{},
 	}
 }
 
@@ -44,7 +45,7 @@ func NewServer(port uint16) *Server {
 type Server struct {
 	port       uint16
 	mu         sync.Mutex
-	challenges map[string]map[uuid.UUID]string
+	challenges map[string]map[uuid.UUID]acmeRecord
 }
 
 // Run runs ACME server.
@@ -71,7 +72,7 @@ func (s *Server) Run(ctx context.Context) error {
 				}
 
 				id := uuid.New()
-				s.storeChallenges(id, req.Challenges)
+				s.storeRequest(id, req)
 				defer s.removeChallenges(id, req.Challenges)
 
 				c.Send(&wire.MsgAck{})
@@ -80,8 +81,8 @@ func (s *Server) Run(ctx context.Context) error {
 	)
 }
 
-// Query returns challenges for domain.
-func (s *Server) Query(domain string) []string {
+// QueryTXT returns TXT challenge responses for domain.
+func (s *Server) QueryTXT(domain string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -92,23 +93,48 @@ func (s *Server) Query(domain string) []string {
 
 	values := make([]string, 0, len(d))
 	for _, v := range d {
-		values = append(values, v)
+		values = append(values, v.Value)
 	}
 
 	return values
 }
 
-func (s *Server) storeChallenges(id uuid.UUID, challenges []wire.Challenge) {
+// QueryCAA returns CAA responses for domain.
+func (s *Server) QueryCAA(domain string) []CAA {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, ch := range challenges {
+	d := s.challenges[domain]
+	if len(d) == 0 {
+		return nil
+	}
+
+	values := make([]CAA, 0, len(d))
+	for _, v := range d {
+		values = append(values, v.CAA)
+	}
+
+	return values
+}
+
+func (s *Server) storeRequest(id uuid.UUID, req *wire.MsgRequest) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, ch := range req.Challenges {
 		chs := s.challenges[ch.Domain]
 		if chs == nil {
-			chs = map[uuid.UUID]string{}
+			chs = map[uuid.UUID]acmeRecord{}
 			s.challenges[ch.Domain] = chs
 		}
-		chs[id] = ch.Value
+		chs[id] = acmeRecord{
+			Value: ch.Value,
+			CAA: CAA{
+				Flags: 128,
+				Tag:   "issue",
+				Value: fmt.Sprintf("%s;accounturi=%s;validationmethods=dns-01", req.Provider, req.AccountURI),
+			},
+		}
 	}
 }
 
@@ -126,4 +152,16 @@ func (s *Server) removeChallenges(id uuid.UUID, challenges []wire.Challenge) {
 			delete(s.challenges, ch.Domain)
 		}
 	}
+}
+
+type acmeRecord struct {
+	Value string
+	CAA   CAA
+}
+
+// CAA represents CAA record.
+type CAA struct {
+	Flags uint8
+	Tag   string
+	Value string
 }

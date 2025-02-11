@@ -38,6 +38,7 @@ const (
 	typeCNAME = 5
 	typeMX    = 15
 	typeTXT   = 16
+	typeCAA   = 257
 
 	rCodeOK             = 0
 	rCodeFormatError    = 1
@@ -405,7 +406,7 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 	case typeTXT:
 		values := zConfig.Texts[q.QName]
 		if len(values) == 0 && acmeServer != nil && strings.HasPrefix(q.QName, acme.DomainPrefix) {
-			values = acmeServer.Query(strings.TrimPrefix(q.QName, acme.DomainPrefix))
+			values = acmeServer.QueryTXT(strings.TrimPrefix(q.QName, acme.DomainPrefix))
 		}
 		if len(values) == 0 {
 			h.RCode = rCodeNameError
@@ -429,6 +430,34 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 		for _, v := range values {
 			b = append(b, uint8(len(v)))
 			b = append(b, v...)
+		}
+	case typeCAA:
+		var values []acme.CAA
+		if acmeServer != nil {
+			values = acmeServer.QueryCAA(strings.TrimPrefix(q.QName, acme.DomainPrefix))
+		}
+		if len(values) == 0 {
+			h.RCode = rCodeNameError
+			return b
+		}
+
+		for _, v := range values {
+			b = putRecord(rRecord{
+				Name:     q.QName,
+				Type:     typeCAA,
+				Class:    classInternet,
+				TTL:      ttl,
+				RDLength: 2 + uint16(len(v.Tag)) + uint16(len(v.Value)),
+			}, b, h)
+			if h.TC {
+				return b
+			}
+			for _, v := range values {
+				b = append(b, v.Flags)
+				b = append(b, uint8(len(v.Tag)))
+				b = append(b, v.Tag...)
+				b = append(b, v.Value...)
+			}
 		}
 	}
 
