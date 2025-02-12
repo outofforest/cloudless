@@ -302,7 +302,6 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 		return b
 	case typeNS:
 		if q.QName != zConfig.Domain || len(zConfig.Nameservers) == 0 {
-			h.RCode = rCodeNameError
 			return b
 		}
 
@@ -324,7 +323,6 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 		return b
 	case typeMX:
 		if q.QName != zConfig.Domain || len(zConfig.MailExchanges) == 0 {
-			h.RCode = rCodeNameError
 			return b
 		}
 
@@ -381,14 +379,8 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 
 	switch q.QType {
 	case typeCNAME:
-		h.RCode = rCodeNameError
-		return b
 	case typeA:
 		ips := zConfig.Domains[q.QName]
-		if len(ips) == 0 {
-			h.RCode = rCodeNameError
-			return b
-		}
 		for i := range uint64(len(ips)) {
 			ip := ips[(queryID+i)%uint64(len(ips))]
 			b = putRecord(rRecord{
@@ -408,26 +400,17 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 		if len(values) == 0 && acmeServer != nil && strings.HasPrefix(q.QName, acme.DomainPrefix) {
 			values = acmeServer.QueryTXT(strings.TrimPrefix(q.QName, acme.DomainPrefix))
 		}
-		if len(values) == 0 {
-			h.RCode = rCodeNameError
-			return b
-		}
-
-		var length uint16
 		for _, v := range values {
-			length += uint16(len(v)) + 1
-		}
-		b = putRecord(rRecord{
-			Name:     q.QName,
-			Type:     typeTXT,
-			Class:    classInternet,
-			TTL:      ttl,
-			RDLength: length,
-		}, b, h)
-		if h.TC {
-			return b
-		}
-		for _, v := range values {
+			b = putRecord(rRecord{
+				Name:     q.QName,
+				Type:     typeTXT,
+				Class:    classInternet,
+				TTL:      ttl,
+				RDLength: uint16(len(v)) + 1,
+			}, b, h)
+			if h.TC {
+				return b
+			}
 			b = append(b, uint8(len(v)))
 			b = append(b, v...)
 		}
@@ -436,9 +419,15 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 		if acmeServer != nil {
 			values = acmeServer.QueryCAA(strings.TrimPrefix(q.QName, acme.DomainPrefix))
 		}
+
+		// FIXME (wojciech): This causes issues if DNS responds to queries but does not receive ACME challenges.
 		if len(values) == 0 {
-			h.RCode = rCodeNameError
-			return b
+			values = append(values, []acme.CAA{
+				{
+					Tag:   "issue",
+					Value: ";",
+				},
+			}...)
 		}
 
 		for _, v := range values {
@@ -452,12 +441,10 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 			if h.TC {
 				return b
 			}
-			for _, v := range values {
-				b = append(b, v.Flags)
-				b = append(b, uint8(len(v.Tag)))
-				b = append(b, v.Tag...)
-				b = append(b, v.Value...)
-			}
+			b = append(b, v.Flags)
+			b = append(b, uint8(len(v.Tag)))
+			b = append(b, v.Tag...)
+			b = append(b, v.Value...)
 		}
 	}
 

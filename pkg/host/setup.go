@@ -63,11 +63,9 @@ var (
 	ErrHostFound = errors.New("host found")
 
 	virtPackages = []string{
-		"libvirt-daemon-config-network",
 		"libvirt-daemon-kvm",
 		"qemu-kvm",
-		"qemu-virtiofsd",
-		"libvirt-nss",
+		"netcat",
 	}
 
 	//go:embed cloudless.repo
@@ -769,7 +767,12 @@ func installPackages(ctx context.Context, repoMirrors, packages []string) error 
 
 	// TODO (wojciech): One day I will write an rpm package manager in go.
 	return libexec.Exec(ctx, exec.Command("dnf", append(
-		[]string{"install", "-y", "--setopt=keepcache=False", "--repo=cloudless"}, pkgs...)...))
+		[]string{
+			"install", "-y",
+			"--setopt=keepcache=False",
+			"--setopt=install_weak_deps=False",
+			"--repo=cloudless",
+		}, pkgs...)...))
 }
 
 func configureIPForwarding() error {

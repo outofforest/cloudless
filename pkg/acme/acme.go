@@ -108,8 +108,6 @@ func run(ctx context.Context, config Config) error {
 		return errors.WithStack(err)
 	}
 
-	fmt.Println(account)
-
 	waitChClosed := make(chan time.Time)
 	close(waitChClosed)
 	var waitCh <-chan time.Time = waitChClosed
