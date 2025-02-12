@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"strconv"
 
 	. "github.com/outofforest/cloudless" //nolint:stylecheck
@@ -14,6 +15,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/grafana"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/host/firewall"
+	"github.com/outofforest/cloudless/pkg/ingress"
 	"github.com/outofforest/cloudless/pkg/loki"
 	"github.com/outofforest/cloudless/pkg/ntp"
 	"github.com/outofforest/cloudless/pkg/pebble"
@@ -23,6 +25,10 @@ import (
 	"github.com/outofforest/cloudless/pkg/vm"
 	"github.com/outofforest/cloudless/pkg/vnet"
 	"github.com/outofforest/cloudless/pkg/yum"
+)
+
+const (
+	endpointGrafana = "grafana"
 )
 
 var (
@@ -75,9 +81,6 @@ var deployment = Deployment(
 			firewall.RedirectV4UDPPort("93.179.253.130", dns.Port, "10.0.3.2", dns.Port),
 			firewall.RedirectV4UDPPort("93.179.253.131", dns.Port, "10.0.3.3", dns.Port),
 
-			// Grafana.
-			firewall.RedirectV4TCPPort("93.179.253.132", 3000, "10.0.1.2", 3000),
-
 			// Prometheus.
 			firewall.RedirectV4TCPPort("10.0.0.155", 3001, "10.0.1.2", 3001),
 
@@ -88,6 +91,31 @@ var deployment = Deployment(
 		acme.Service("/root/mounts/acme", acme.LetsEncryptStaging,
 			acme.DNSACMEs("10.0.3.2", "10.0.3.3"),
 			acme.Domains("dev.onem.network", "test.dev.onem.network")),
+		ingress.Service(
+			ingress.Config{
+				Endpoints: map[ingress.EndpointID]ingress.Endpoint{
+					endpointGrafana: {
+						Path:            "/",
+						AllowedDomains:  []string{"dev.onem.network"},
+						AllowedMethods:  []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
+						AllowWebsockets: true,
+						HTTPSMode:       ingress.HTTPSModeDisabled,
+						PlainBindings: []string{
+							"93.179.253.132:80",
+						},
+					},
+				},
+				Targets: map[ingress.EndpointID][]ingress.Target{
+					endpointGrafana: {
+						{
+							Host: "10.0.1.2",
+							Port: 3000,
+							Path: "/",
+						},
+					},
+				},
+			},
+		),
 		vnet.NAT("dns", "52:54:00:6a:94:c0", vnet.IP4("10.0.3.1/24")),
 		vm.New("dns01", 2, 2, vm.Network("dns", "52:54:00:6a:94:c1")),
 		vm.New("dns02", 2, 2, vm.Network("dns", "52:54:00:6a:94:c2")),
