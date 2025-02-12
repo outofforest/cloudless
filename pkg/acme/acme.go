@@ -8,8 +8,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"fmt"
+	"encoding/json"
+	"encoding/pem"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/pkg/errors"
@@ -30,14 +33,19 @@ const (
 	dnsACMEConnectionTimeout = 20 * time.Second
 	dnsACMEOnboardTimeout    = 2 * time.Second
 	dnsACMEACKTimeout        = 5 * time.Second
+
+	accountFile = "account"
+	certFile    = "cert"
 )
 
 // Service returns new acme client service.
-func Service(dirConfig DirectoryConfig, configurators ...Configurator) host.Configurator {
+func Service(storeDir string, dirConfig DirectoryConfig, configurators ...Configurator) host.Configurator {
 	return cloudless.Join(
 		cloudless.Service("acme", parallel.Fail, func(ctx context.Context) error {
 			config := Config{
-				Directory: dirConfig,
+				AccountFile: filepath.Join(storeDir, accountFile),
+				CertFile:    filepath.Join(storeDir, certFile),
+				Directory:   dirConfig,
 			}
 
 			for _, configurator := range configurators {
@@ -84,13 +92,7 @@ type order struct {
 func run(ctx context.Context, config Config) error {
 	log := logger.Get(ctx)
 
-	accountKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
 	client := &goacme.Client{
-		Key: accountKey,
 		HTTPClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
@@ -101,24 +103,42 @@ func run(ctx context.Context, config Config) error {
 		DirectoryURL: config.Directory.DirectoryURL,
 	}
 
-	account, err := client.Register(ctx, &goacme.Account{
-		Contact: []string{"mailto:wojtek@exw.co"},
-	}, goacme.AcceptTOS)
+	keyID, key, err := readAccount(config.AccountFile)
 	if err != nil {
-		return errors.WithStack(err)
-	}
+		var err error
+		if key, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader); err != nil {
+			return errors.WithStack(err)
+		}
 
-	waitChClosed := make(chan time.Time)
-	close(waitChClosed)
-	var waitCh <-chan time.Time = waitChClosed
+		client.Key = key
+
+		keyID, err = registerAccount(ctx, client, "wojtek@exw.co")
+		if err != nil {
+			return errors.WithStack(err)
+		}
+
+		if err := storeAccount(config.AccountFile, keyID, key); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+	client.Key = key
+	client.KID = keyID
+
+	renewTimerFunc := renewTimerFactory(config.Directory.RenewDuration)
+
+	expirationTime, _ := readCertificateExpirationTime(config.CertFile)
+	waitCh := renewTimerFunc(expirationTime)
+
+	log.Info("Certificate expiration time", zap.Time("expirationTime", expirationTime))
 
 	for {
 		select {
 		case <-ctx.Done():
 			return errors.WithStack(ctx.Err())
 		case <-waitCh:
-			waitCh = time.After(time.Minute)
 		}
+
+		log.Info("Issuing certificate")
 
 		err := parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 			startCh := make(chan struct{}, len(config.DNSACME))
@@ -161,7 +181,15 @@ func run(ctx context.Context, config Config) error {
 				})
 			}
 
-			spawn("order", parallel.Exit, func(ctx context.Context) error {
+			spawn("order", parallel.Exit, func(ctx context.Context) (retErr error) {
+				log := logger.Get(ctx)
+
+				defer func() {
+					if retErr != nil {
+						waitCh = time.After(rerunInterval)
+					}
+				}()
+
 				waitStartCh := time.After(dnsACMEConnectionTimeout)
 				var started int
 			startLoop:
@@ -201,7 +229,7 @@ func run(ctx context.Context, config Config) error {
 					}
 
 					for _, acmeChallenge := range authZ.Challenges {
-						if acmeChallenge.Type != "dns-01" {
+						if acmeChallenge.Status != "pending" || acmeChallenge.Type != "dns-01" {
 							continue
 						}
 
@@ -215,7 +243,7 @@ func run(ctx context.Context, config Config) error {
 
 				req := &wire.MsgRequest{
 					Provider:   config.Directory.Provider,
-					AccountURI: account.URI,
+					AccountURI: string(client.KID),
 					Challenges: make([]wire.Challenge, 0, len(o.Challenges)),
 				}
 				for _, ch := range o.Challenges {
@@ -285,7 +313,22 @@ func run(ctx context.Context, config Config) error {
 					return errors.WithStack(err)
 				}
 
-				fmt.Println(chain)
+				if len(chain) == 0 {
+					return errors.New("empty certificate chain")
+				}
+
+				expirationTime, err := certificateExpirationTime(chain[0])
+				if err != nil {
+					return errors.WithStack(err)
+				}
+
+				if err := storeCertificate(config.CertFile, chain); err != nil {
+					return errors.WithStack(err)
+				}
+
+				waitCh = renewTimerFunc(expirationTime)
+
+				log.Info("Certificate issued", zap.Time("expirationTime", expirationTime))
 
 				return nil
 			})
@@ -301,5 +344,127 @@ func run(ctx context.Context, config Config) error {
 		default:
 			log.Error("Certificate issuance failed", zap.Error(err))
 		}
+	}
+}
+
+type account struct {
+	KeyID goacme.KeyID
+	Key   []byte
+}
+
+func readAccount(accountFile string) (goacme.KeyID, *ecdsa.PrivateKey, error) {
+	accountF, err := os.Open(accountFile)
+	if err != nil {
+		return "", nil, errors.WithStack(err)
+	}
+	defer accountF.Close()
+
+	var acc account
+	if err := json.NewDecoder(accountF).Decode(&acc); err != nil {
+		return "", nil, errors.WithStack(err)
+	}
+
+	if acc.KeyID == "" {
+		return "", nil, errors.New("empty KeyID")
+	}
+
+	key, err := x509.ParseECPrivateKey(acc.Key)
+	if err != nil {
+		return "", nil, errors.WithStack(err)
+	}
+
+	return acc.KeyID, key, nil
+}
+
+func storeAccount(accountFile string, keyID goacme.KeyID, key *ecdsa.PrivateKey) error {
+	if err := os.MkdirAll(filepath.Dir(accountFile), 0o700); err != nil {
+		return errors.WithStack(err)
+	}
+
+	accountF, err := os.OpenFile(accountFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer accountF.Close()
+
+	keyRaw, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	return errors.WithStack(json.NewEncoder(accountF).Encode(account{
+		KeyID: keyID,
+		Key:   keyRaw,
+	}))
+}
+
+func registerAccount(ctx context.Context, client *goacme.Client, email string) (goacme.KeyID, error) {
+	_, err := client.Register(ctx, &goacme.Account{
+		Contact: []string{"mailto:" + email},
+	}, goacme.AcceptTOS)
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+
+	return client.KID, nil
+}
+
+func readCertificateExpirationTime(certFile string) (time.Time, error) {
+	cert, err := os.ReadFile(certFile)
+	if err != nil {
+		return time.Time{}, errors.WithStack(err)
+	}
+
+	block, _ := pem.Decode(cert)
+	if block == nil {
+		return time.Time{}, errors.New("file does not contain certificate")
+	}
+
+	return certificateExpirationTime(block.Bytes)
+}
+
+func storeCertificate(certFile string, chain [][]byte) error {
+	if err := os.MkdirAll(filepath.Dir(certFile), 0o700); err != nil {
+		return errors.WithStack(err)
+	}
+
+	certF, err := os.OpenFile(certFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer certF.Close()
+
+	for _, cert := range chain {
+		if err := pem.Encode(certF, &pem.Block{Type: "CERTIFICATE", Bytes: cert}); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+
+	return nil
+}
+
+func certificateExpirationTime(cert []byte) (time.Time, error) {
+	c, err := x509.ParseCertificate(cert)
+	if err != nil {
+		return time.Time{}, errors.WithStack(err)
+	}
+
+	if time.Until(c.NotAfter) < 0 {
+		return time.Time{}, errors.New("certificate expired")
+	}
+
+	return c.NotAfter, nil
+}
+
+func renewTimerFactory(renewBefore time.Duration) func(time.Time) <-chan time.Time {
+	return func(expirationTime time.Time) <-chan time.Time {
+		renewDuration := time.Until(expirationTime)
+		if renewDuration <= renewBefore {
+			ch := make(chan time.Time)
+			close(ch)
+			return ch
+		}
+
+		return time.After(renewDuration - renewBefore)
 	}
 }

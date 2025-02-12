@@ -2,6 +2,7 @@ package acme
 
 import (
 	"strings"
+	"time"
 
 	dnsacme "github.com/outofforest/cloudless/pkg/dns/acme"
 	"github.com/outofforest/cloudless/pkg/pebble"
@@ -10,9 +11,11 @@ import (
 
 // Config stores acme configuration.
 type Config struct {
-	Directory DirectoryConfig
-	DNSACME   []string
-	Domains   []string
+	AccountFile string
+	CertFile    string
+	Directory   DirectoryConfig
+	DNSACME     []string
+	Domains     []string
 }
 
 // Configurator defines function setting the dns configuration.
@@ -20,31 +23,35 @@ type Configurator func(c *Config)
 
 // DirectoryConfig is the config of ACME directory service.
 type DirectoryConfig struct {
-	Provider     string
-	DirectoryURL string
-	Insecure     bool
+	Provider      string
+	DirectoryURL  string
+	Insecure      bool
+	RenewDuration time.Duration
 }
 
 var (
 	// LetsEncrypt is the LetsEncrypt production config.
 	LetsEncrypt = DirectoryConfig{
-		Provider:     "letsencrypt.org",
-		DirectoryURL: "https://acme-v02.api.letsencrypt.org/directory",
+		Provider:      "letsencrypt.org",
+		DirectoryURL:  "https://acme-v02.api.letsencrypt.org/directory",
+		RenewDuration: time.Hour * 24 * 29, // 29 days
 	}
 
 	// LetsEncryptStaging is the LetsEncrypt staging config.
 	LetsEncryptStaging = DirectoryConfig{
-		Provider:     "letsencrypt.org",
-		DirectoryURL: "https://acme-staging-v02.api.letsencrypt.org/directory",
+		Provider:      "letsencrypt.org",
+		DirectoryURL:  "https://acme-staging-v02.api.letsencrypt.org/directory",
+		RenewDuration: 30 * time.Minute,
 	}
 )
 
 // Pebble returns directory config for pebble.
 func Pebble(host string) DirectoryConfig {
 	return DirectoryConfig{
-		Provider:     "pebble",
-		DirectoryURL: tnet.JoinScheme("https", host, pebble.Port) + "/dir",
-		Insecure:     true,
+		Provider:      "pebble",
+		DirectoryURL:  tnet.JoinScheme("https", host, pebble.Port) + "/dir",
+		Insecure:      true,
+		RenewDuration: 3 * time.Minute,
 	}
 }
 
