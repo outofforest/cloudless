@@ -215,83 +215,89 @@ func run(ctx context.Context, config Config) error {
 					return errors.WithStack(err)
 				}
 
-				o := order{
-					OrderURI:   acmeOrder.URI,
-					Challenges: make([]challenge, 0, len(acmeOrder.AuthzURLs)),
-				}
-				for _, authzURL := range acmeOrder.AuthzURLs {
-					authZ, err := client.GetAuthorization(ctx, authzURL)
-					if err != nil {
-						return errors.WithStack(err)
+				switch acmeOrder.Status {
+				case goacme.StatusPending:
+					o := order{
+						OrderURI:   acmeOrder.URI,
+						Challenges: make([]challenge, 0, len(acmeOrder.AuthzURLs)),
 					}
-					if authZ.Identifier.Type != "dns" {
-						continue
-					}
-
-					for _, acmeChallenge := range authZ.Challenges {
-						if acmeChallenge.Status != "pending" || acmeChallenge.Type != "dns-01" {
+					for _, authzURL := range acmeOrder.AuthzURLs {
+						authZ, err := client.GetAuthorization(ctx, authzURL)
+						if err != nil {
+							return errors.WithStack(err)
+						}
+						if authZ.Identifier.Type != "dns" {
 							continue
 						}
 
-						o.Challenges = append(o.Challenges, challenge{
-							Domain:    authZ.Identifier.Value,
-							AuthZURI:  authZ.URI,
-							Challenge: acmeChallenge,
+						for _, acmeChallenge := range authZ.Challenges {
+							if acmeChallenge.Status != "pending" || acmeChallenge.Type != "dns-01" {
+								continue
+							}
+
+							o.Challenges = append(o.Challenges, challenge{
+								Domain:    authZ.Identifier.Value,
+								AuthZURI:  authZ.URI,
+								Challenge: acmeChallenge,
+							})
+						}
+					}
+
+					req := &wire.MsgRequest{
+						Provider:   config.Directory.Provider,
+						AccountURI: string(client.KID),
+						Challenges: make([]wire.Challenge, 0, len(o.Challenges)),
+					}
+					for _, ch := range o.Challenges {
+						auth, err := client.DNS01ChallengeRecord(ch.Challenge.Token)
+						if err != nil {
+							return errors.WithStack(err)
+						}
+
+						req.Challenges = append(req.Challenges, wire.Challenge{
+							Domain: ch.Domain,
+							Value:  auth,
 						})
 					}
-				}
 
-				req := &wire.MsgRequest{
-					Provider:   config.Directory.Provider,
-					AccountURI: string(client.KID),
-					Challenges: make([]wire.Challenge, 0, len(o.Challenges)),
-				}
-				for _, ch := range o.Challenges {
-					auth, err := client.DNS01ChallengeRecord(ch.Challenge.Token)
+					for range config.DNSACME {
+						reqCh <- req
+					}
+
+					waitACKCh := time.After(dnsACMEACKTimeout)
+					var acked bool
+				ackLoop:
+					for range started {
+						select {
+						case <-ctx.Done():
+							return errors.WithStack(ctx.Err())
+						case <-waitACKCh:
+							if acked {
+								break ackLoop
+							}
+							return errors.New("timeout waiting on ack from to dns acme")
+						case <-ackCh:
+							acked = true
+						}
+					}
+
+					for _, ch := range o.Challenges {
+						if _, err := client.Accept(ctx, ch.Challenge); err != nil {
+							return errors.WithStack(err)
+						}
+
+						if _, err := client.WaitAuthorization(ctx, ch.AuthZURI); err != nil {
+							return errors.WithStack(err)
+						}
+					}
+
+					acmeOrder, err = client.WaitOrder(ctx, o.OrderURI)
 					if err != nil {
 						return errors.WithStack(err)
 					}
-
-					req.Challenges = append(req.Challenges, wire.Challenge{
-						Domain: ch.Domain,
-						Value:  auth,
-					})
-				}
-
-				for range config.DNSACME {
-					reqCh <- req
-				}
-
-				waitACKCh := time.After(dnsACMEACKTimeout)
-				var acked bool
-			ackLoop:
-				for range started {
-					select {
-					case <-ctx.Done():
-						return errors.WithStack(ctx.Err())
-					case <-waitACKCh:
-						if acked {
-							break ackLoop
-						}
-						return errors.New("timeout waiting on ack from to dns acme")
-					case <-ackCh:
-						acked = true
-					}
-				}
-
-				for _, ch := range o.Challenges {
-					if _, err := client.Accept(ctx, ch.Challenge); err != nil {
-						return errors.WithStack(err)
-					}
-
-					if _, err := client.WaitAuthorization(ctx, ch.AuthZURI); err != nil {
-						return errors.WithStack(err)
-					}
-				}
-
-				order, err := client.WaitOrder(ctx, o.OrderURI)
-				if err != nil {
-					return errors.WithStack(err)
+				case goacme.StatusReady:
+				default:
+					return errors.Errorf("invalid order status %q", acmeOrder.Status)
 				}
 
 				certKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
@@ -308,7 +314,7 @@ func run(ctx context.Context, config Config) error {
 					return errors.WithStack(err)
 				}
 
-				chain, _, err := client.CreateOrderCert(ctx, order.FinalizeURL, csr, true)
+				chain, _, err := client.CreateOrderCert(ctx, acmeOrder.FinalizeURL, csr, true)
 				if err != nil {
 					return errors.WithStack(err)
 				}
