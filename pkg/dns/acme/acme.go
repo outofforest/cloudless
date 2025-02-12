@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -20,6 +21,8 @@ const (
 
 	// DomainPrefix is the domain prefix defined by ACME.
 	DomainPrefix = "_acme-challenge."
+
+	timeout = time.Minute
 )
 
 // WireConfig is the DNS ACME service wire config.
@@ -60,10 +63,19 @@ func (s *Server) Run(ctx context.Context) error {
 
 	return resonance.RunServer(ctx, l, WireConfig,
 		func(ctx context.Context, recvCh <-chan any, c *resonance.Connection[wire.Marshaller]) error {
+			ctx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
+
 			for {
-				msg, ok := <-recvCh
-				if !ok {
+				var msg any
+				var ok bool
+				select {
+				case <-ctx.Done():
 					return nil
+				case msg, ok = <-recvCh:
+					if !ok {
+						return nil
+					}
 				}
 
 				req, ok := msg.(*wire.MsgRequest)
