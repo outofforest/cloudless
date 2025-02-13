@@ -1,6 +1,8 @@
 package ingress
 
 import (
+	"context"
+
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/host/firewall"
@@ -16,12 +18,23 @@ const (
 )
 
 // Service returns ingress service.
-func Service(config Config) host.Configurator {
+func Service(configurators ...Configurator) host.Configurator {
 	return cloudless.Join(
 		cloudless.Firewall(
 			firewall.OpenV4TCPPort(PortHTTP),
 			firewall.OpenV4TCPPort(PortHTTPS),
 		),
-		cloudless.Service("ingress", parallel.Fail, New(config).Run),
+		cloudless.Service("ingress", parallel.Fail, func(ctx context.Context) error {
+			config := Config{
+				Endpoints: map[EndpointID]EndpointConfig{},
+				Targets:   map[EndpointID][]TargetConfig{},
+			}
+
+			for _, configurator := range configurators {
+				configurator(&config)
+			}
+
+			return New(config).Run(ctx)
+		}),
 	)
 }

@@ -69,7 +69,7 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 			}
 		}
 		if e.HTTPSMode != HTTPSModeDisabled {
-			for _, b := range e.SecureBindings {
+			for _, b := range e.TLSBindings {
 				if bindings[b] == nil {
 					bindings[b] = newBinding(true)
 				}
@@ -151,7 +151,7 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 	})
 }
 
-func (i *HTTPIngress) registerTargets(endpointID EndpointID, targets []Target) error {
+func (i *HTTPIngress) registerTargets(endpointID EndpointID, targets []TargetConfig) error {
 	if i.endpoints[endpointID] == nil {
 		return errors.Errorf("endpoint %s does not exist", endpointID)
 	}
@@ -179,7 +179,7 @@ type endpoint struct {
 	id             EndpointID
 	address        string
 	secure         bool
-	cfg            Endpoint
+	cfg            EndpointConfig
 	allowedMethods map[string]bool
 	allowedDomains map[string]bool
 
@@ -380,7 +380,7 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (e *endpoint) registerTarget(target Target) {
+func (e *endpoint) registerTarget(target TargetConfig) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -415,7 +415,7 @@ func (b *binding) handler() http.Handler {
 	return b.mux
 }
 
-func (b *binding) addEndpoint(address string, id EndpointID, cfg Endpoint) *endpoint {
+func (b *binding) addEndpoint(address string, id EndpointID, cfg EndpointConfig) *endpoint {
 	e := newEndpoint(address, b.Secure, id, cfg)
 	if len(cfg.AllowedDomains) > 0 {
 		for _, domain := range cfg.AllowedDomains {
@@ -443,7 +443,7 @@ func copyHeader(dst, src http.Header) {
 	}
 }
 
-func newEndpoint(address string, secure bool, id EndpointID, cfg Endpoint) *endpoint {
+func newEndpoint(address string, secure bool, id EndpointID, cfg EndpointConfig) *endpoint {
 	allowedMethods := make(map[string]bool, len(cfg.AllowedMethods))
 	for _, m := range cfg.AllowedMethods {
 		allowedMethods[m] = true
