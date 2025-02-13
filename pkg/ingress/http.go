@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"io"
 	"math/rand"
 	"net"
@@ -12,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/ridge/must"
@@ -21,6 +24,11 @@ import (
 	"github.com/outofforest/cloudless/pkg/tnet"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
+)
+
+const (
+	certificateUnstableRefreshInterval = 10 * time.Second
+	certificateStableRefreshInterval   = time.Minute
 )
 
 // New creates new http ingress.
@@ -36,8 +44,8 @@ type HTTPIngress struct {
 	cfg       Config
 	endpoints map[EndpointID][]*endpoint
 
-	mu         sync.RWMutex
-	activeCert *tls.Certificate
+	mu   sync.RWMutex
+	cert *tls.Certificate
 }
 
 // Run runs the ingress servers.
@@ -81,6 +89,42 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 	}
 
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+		spawn("certificate", parallel.Fail, func(ctx context.Context) error {
+			log := logger.Get(ctx).With(zap.String("url", i.cfg.CertificateURL))
+
+			ticker := time.NewTicker(certificateUnstableRefreshInterval)
+			defer ticker.Stop()
+
+		loop:
+			for {
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				case <-ticker.C:
+					tlsCert, err := fetchCertificate(ctx, i.cfg.CertificateURL)
+					if err != nil {
+						log.Error("Fetching certificate failed", zap.Error(err))
+
+						if i.cert != nil && time.Until(i.cert.Leaf.NotAfter) < 2*certificateStableRefreshInterval {
+							ticker.Reset(certificateUnstableRefreshInterval)
+						}
+
+						continue loop
+					}
+
+					if i.cert == nil || tlsCert.Leaf.NotAfter.After(i.cert.Leaf.NotAfter) {
+						i.setCertificate(tlsCert)
+					}
+
+					if time.Until(i.cert.Leaf.NotAfter) < 2*certificateStableRefreshInterval {
+						ticker.Reset(certificateUnstableRefreshInterval)
+					} else {
+						ticker.Reset(certificateStableRefreshInterval)
+					}
+				}
+			}
+		})
+
 		for bAddr, b := range bindings {
 			cfg := thttp.Config{Handler: b.handler()}
 			if b.Secure {
@@ -88,7 +132,7 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 					i.mu.RLock()
 					defer i.mu.RUnlock()
 
-					return i.activeCert, nil
+					return i.cert, nil
 				}
 			}
 
@@ -124,6 +168,13 @@ func (i *HTTPIngress) registerTargets(endpointID EndpointID, targets []Target) e
 		}
 	}
 	return nil
+}
+
+func (i *HTTPIngress) setCertificate(cert *tls.Certificate) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	i.cert = cert
 }
 
 type endpoint struct {
@@ -411,4 +462,56 @@ func newEndpoint(address string, secure bool, id EndpointID, cfg Endpoint) *endp
 		allowedMethods: allowedMethods,
 		allowedDomains: allowedDomains,
 	}
+}
+
+func fetchCertificate(ctx context.Context, url string) (*tls.Certificate, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	defer resp.Body.Close()
+
+	cert, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	tlsCert := &tls.Certificate{}
+	for {
+		var block *pem.Block
+		block, cert = pem.Decode(cert)
+		if block == nil {
+			break
+		}
+
+		switch block.Type {
+		case "EC PRIVATE KEY":
+			var err error
+			tlsCert.PrivateKey, err = x509.ParseECPrivateKey(block.Bytes)
+			if err != nil {
+				return nil, errors.WithStack(err)
+			}
+		case "CERTIFICATE":
+			tlsCert.Certificate = append(tlsCert.Certificate, block.Bytes)
+		}
+	}
+
+	if tlsCert.PrivateKey == nil {
+		return nil, errors.New("private key not present")
+	}
+	if len(tlsCert.Certificate) == 0 {
+		return nil, errors.New("certificate chain not present")
+	}
+
+	tlsCert.Leaf, err = x509.ParseCertificate(tlsCert.Certificate[0])
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	return tlsCert, nil
 }

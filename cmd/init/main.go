@@ -93,15 +93,16 @@ var deployment = Deployment(
 			acme.Domains("dev.onem.network", "test.dev.onem.network")),
 		ingress.Service(
 			ingress.Config{
+				CertificateURL: "http://127.0.0.1:" + strconv.FormatUint(acme.Port, 10),
 				Endpoints: map[ingress.EndpointID]ingress.Endpoint{
 					endpointGrafana: {
 						Path:            "/",
 						AllowedDomains:  []string{"dev.onem.network"},
 						AllowedMethods:  []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
 						AllowWebsockets: true,
-						HTTPSMode:       ingress.HTTPSModeDisabled,
-						PlainBindings: []string{
-							"93.179.253.132:80",
+						HTTPSMode:       ingress.HTTPSModeOnly,
+						SecureBindings: []string{
+							"93.179.253.132:443",
 						},
 					},
 				},

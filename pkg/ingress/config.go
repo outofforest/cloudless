@@ -2,6 +2,9 @@ package ingress
 
 // Config defines configuration of HTTP HTTPIngress.
 type Config struct {
+	// CertificateURL is the URL delivering certificate.
+	CertificateURL string
+
 	// Targets defines target registrations for endpoint.
 	Targets map[EndpointID][]Target
 
