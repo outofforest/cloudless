@@ -137,8 +137,6 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 			}
 
 			spawn("server", parallel.Fail, func(ctx context.Context) error {
-				ctx = logger.With(ctx, zap.String("localAddr", bAddr))
-
 				l, err := tnet.Listen(ctx, bAddr)
 				if err != nil {
 					return errors.WithStack(err)

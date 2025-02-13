@@ -87,13 +87,9 @@ var deployment = Deployment(
 			// Loki.
 			firewall.RedirectV4TCPPort("10.0.0.155", 3002, "10.0.1.2", 3002),
 		),
-		Mount("/dev/sda", "/root/mounts/acme", true),
-		acme.Service("/root/mounts/acme", acme.LetsEncryptStaging,
-			acme.DNSACMEs("10.0.3.2", "10.0.3.3"),
-			acme.Domains("dev.onem.network", "test.dev.onem.network")),
 		ingress.Service(
 			ingress.Config{
-				CertificateURL: "http://127.0.0.1:" + strconv.FormatUint(acme.Port, 10),
+				CertificateURL: "http://10.0.2.6:" + strconv.FormatUint(acme.Port, 10),
 				Endpoints: map[ingress.EndpointID]ingress.Endpoint{
 					endpointGrafana: {
 						Path:            "/",
@@ -123,6 +119,9 @@ var deployment = Deployment(
 		vnet.NAT("monitoring", "52:54:00:6d:94:c0", vnet.IP4("10.0.1.1/24")),
 		vm.New("monitoring", 5, 4, vm.Network("monitoring", "00:01:0a:00:02:05")),
 		cnet.NAT("acme", cnet.IP4("10.0.2.1/24")),
+		Mount("/dev/sda", "/root/mounts/acme", true),
+		container.New("acme", "/tmp/containers/acme",
+			container.Network("acme", "52:54:00:6e:94:c4")),
 		container.New("pebble", "/tmp/containers/pebble",
 			container.Network("acme", "52:54:00:6e:94:c3")),
 	),
@@ -138,6 +137,14 @@ var deployment = Deployment(
 		Gateway("10.0.2.1"),
 		Network("52:54:00:6e:94:c3", "10.0.2.5/24"),
 		pebble.Container("/tmp/app/pebble", "10.0.3.2:53"),
+	),
+	Container("acme",
+		Gateway("10.0.2.1"),
+		Network("52:54:00:6e:94:c4", "10.0.2.6/24"),
+		Mount("/root/mounts/acme", "/acme", true),
+		acme.Service("/acme", acme.LetsEncryptStaging,
+			acme.DNSACMEs("10.0.3.2", "10.0.3.3"),
+			acme.Domains("dev.onem.network")),
 	),
 	Host("monitoring",
 		Gateway("10.0.1.1"),

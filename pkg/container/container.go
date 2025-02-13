@@ -39,8 +39,10 @@ import (
 const AppDir = "/cloudless"
 
 var protectedFiles = map[string]struct{}{
-	"/etc/resolv.conf": {},
-	"/etc/hosts":       {},
+	"/etc/resolv.conf":  {},
+	"/etc/hosts":        {},
+	"/etc/hostname":     {},
+	"/etc/ssl/cert.pem": {},
 }
 
 // Config represents container configuration.
@@ -533,7 +535,7 @@ loop:
 				return errors.WithStack(err)
 			}
 		case header.Typeflag == tar.TypeReg:
-			f, err := os.OpenFile(header.Name, os.O_CREATE|os.O_WRONLY, mode)
+			f, err := os.OpenFile(header.Name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 			if err != nil {
 				return errors.WithStack(err)
 			}
