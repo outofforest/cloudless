@@ -32,7 +32,7 @@ type Config struct {
 	// Handler is a request handler
 	Handler http.Handler
 
-	// GetCertificate if non-nil turns on TLS and returns certificate for request
+	// GetCertificate if non-nil turns on TLS and returns certificate for request.
 	GetCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 

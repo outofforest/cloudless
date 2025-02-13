@@ -1,6 +1,7 @@
 package acme
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -10,9 +11,11 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -23,12 +26,17 @@ import (
 	dnsacme "github.com/outofforest/cloudless/pkg/dns/acme"
 	"github.com/outofforest/cloudless/pkg/dns/acme/wire"
 	"github.com/outofforest/cloudless/pkg/host"
+	"github.com/outofforest/cloudless/pkg/host/firewall"
+	"github.com/outofforest/cloudless/pkg/thttp"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
 	"github.com/outofforest/resonance"
 )
 
 const (
+	// Port is the port where cert is served.
+	Port = 8081
+
 	rerunInterval            = 5 * time.Second
 	dnsACMEConnectionTimeout = 20 * time.Second
 	dnsACMEOnboardTimeout    = 2 * time.Second
@@ -41,6 +49,7 @@ const (
 // Service returns new acme client service.
 func Service(storeDir string, dirConfig DirectoryConfig, configurators ...Configurator) host.Configurator {
 	return cloudless.Join(
+		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
 		cloudless.Service("acme", parallel.Fail, func(ctx context.Context) error {
 			config := Config{
 				AccountFile: filepath.Join(storeDir, accountFile),
@@ -59,20 +68,8 @@ func Service(storeDir string, dirConfig DirectoryConfig, configurators ...Config
 				return errors.New("no dns acme endpoints defined")
 			}
 
-			for {
-				if err := run(ctx, config); err != nil {
-					if errors.Is(err, ctx.Err()) {
-						return err
-					}
-					logger.Get(ctx).Error("ACME failed", zap.Error(err))
-				}
-
-				select {
-				case <-ctx.Done():
-					return errors.WithStack(ctx.Err())
-				case <-time.After(rerunInterval):
-				}
-			}
+			a := &acme{config: config}
+			return a.Run(ctx)
 		}),
 	)
 }
@@ -88,22 +85,76 @@ type order struct {
 	Challenges []challenge
 }
 
+type acme struct {
+	config Config
+
+	mu          sync.RWMutex
+	certificate []byte
+}
+
+func (a *acme) Run(ctx context.Context) error {
+	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+		spawn("issuer", parallel.Fail, func(ctx context.Context) error {
+			for {
+				if err := a.runIssuer(ctx); err != nil {
+					if errors.Is(err, ctx.Err()) {
+						return err
+					}
+					logger.Get(ctx).Error("ACME failed", zap.Error(err))
+				}
+
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				case <-time.After(rerunInterval):
+				}
+			}
+		})
+		spawn("server", parallel.Fail, func(ctx context.Context) error {
+			l, err := net.ListenTCP("tcp", &net.TCPAddr{Port: Port})
+			if err != nil {
+				return errors.WithStack(err)
+			}
+			defer l.Close()
+
+			server := thttp.NewServer(l, thttp.Config{
+				Handler: http.HandlerFunc(a.serveCertificate),
+			})
+			return server.Run(ctx)
+		})
+
+		return nil
+	})
+}
+
+func (a *acme) serveCertificate(w http.ResponseWriter, r *http.Request) {
+	if r.RequestURI != "/" || r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	_, _ = w.Write(a.certificate)
+}
+
 //nolint:gocyclo
-func run(ctx context.Context, config Config) error {
+func (a *acme) runIssuer(ctx context.Context) error {
 	log := logger.Get(ctx)
 
 	client := &goacme.Client{
 		HTTPClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: config.Directory.Insecure,
+					InsecureSkipVerify: a.config.Directory.Insecure,
 				},
 			},
 		},
-		DirectoryURL: config.Directory.DirectoryURL,
+		DirectoryURL: a.config.Directory.DirectoryURL,
 	}
 
-	keyID, key, err := readAccount(config.AccountFile)
+	keyID, key, err := readAccount(a.config.AccountFile)
 	if err != nil {
 		var err error
 		if key, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader); err != nil {
@@ -117,16 +168,20 @@ func run(ctx context.Context, config Config) error {
 			return errors.WithStack(err)
 		}
 
-		if err := storeAccount(config.AccountFile, keyID, key); err != nil {
+		if err := storeAccount(a.config.AccountFile, keyID, key); err != nil {
 			return errors.WithStack(err)
 		}
 	}
 	client.Key = key
 	client.KID = keyID
 
-	renewTimerFunc := renewTimerFactory(config.Directory.RenewDuration)
+	renewTimerFunc := renewTimerFactory(a.config.Directory.RenewDuration)
 
-	expirationTime, _ := readCertificateExpirationTime(config.CertFile)
+	cert, _ := readCertificate(a.config.CertFile)
+	if len(cert) > 0 {
+		a.setCertificate(cert)
+	}
+	expirationTime, _ := readCertificateExpirationTime(cert)
 	waitCh := renewTimerFunc(expirationTime)
 
 	log.Info("Certificate expiration time", zap.Time("expirationTime", expirationTime))
@@ -141,11 +196,11 @@ func run(ctx context.Context, config Config) error {
 		log.Info("Issuing certificate")
 
 		err := parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
-			startCh := make(chan struct{}, len(config.DNSACME))
-			reqCh := make(chan *wire.MsgRequest, len(config.DNSACME))
-			ackCh := make(chan struct{}, len(config.DNSACME))
+			startCh := make(chan struct{}, len(a.config.DNSACME))
+			reqCh := make(chan *wire.MsgRequest, len(a.config.DNSACME))
+			ackCh := make(chan struct{}, len(a.config.DNSACME))
 
-			for _, dnsACMEAddr := range config.DNSACME {
+			for _, dnsACMEAddr := range a.config.DNSACME {
 				spawn("dnsacme", parallel.Continue, func(ctx context.Context) error {
 					err := resonance.RunClient[wire.Marshaller](ctx, dnsACMEAddr, dnsacme.WireConfig,
 						func(ctx context.Context, recvCh <-chan any, c *resonance.Connection[wire.Marshaller]) error {
@@ -193,7 +248,7 @@ func run(ctx context.Context, config Config) error {
 				waitStartCh := time.After(dnsACMEConnectionTimeout)
 				var started int
 			startLoop:
-				for range config.DNSACME {
+				for range a.config.DNSACME {
 					select {
 					case <-ctx.Done():
 						return errors.WithStack(ctx.Err())
@@ -210,7 +265,7 @@ func run(ctx context.Context, config Config) error {
 					}
 				}
 
-				acmeOrder, err := client.AuthorizeOrder(ctx, goacme.DomainIDs(config.Domains...))
+				acmeOrder, err := client.AuthorizeOrder(ctx, goacme.DomainIDs(a.config.Domains...))
 				if err != nil {
 					return errors.WithStack(err)
 				}
@@ -244,7 +299,7 @@ func run(ctx context.Context, config Config) error {
 					}
 
 					req := &wire.MsgRequest{
-						Provider:   config.Directory.Provider,
+						Provider:   a.config.Directory.Provider,
 						AccountURI: string(client.KID),
 						Challenges: make([]wire.Challenge, 0, len(o.Challenges)),
 					}
@@ -260,7 +315,7 @@ func run(ctx context.Context, config Config) error {
 						})
 					}
 
-					for range config.DNSACME {
+					for range a.config.DNSACME {
 						reqCh <- req
 					}
 
@@ -306,8 +361,8 @@ func run(ctx context.Context, config Config) error {
 				}
 
 				certReq := &x509.CertificateRequest{
-					Subject:  pkix.Name{CommonName: config.Domains[0]},
-					DNSNames: config.Domains,
+					Subject:  pkix.Name{CommonName: a.config.Domains[0]},
+					DNSNames: a.config.Domains,
 				}
 				csr, err := x509.CreateCertificateRequest(rand.Reader, certReq, certKey)
 				if err != nil {
@@ -328,9 +383,12 @@ func run(ctx context.Context, config Config) error {
 					return errors.WithStack(err)
 				}
 
-				if err := storeCertificate(config.CertFile, chain); err != nil {
+				certRaw, err := storeCertificate(a.config.CertFile, certKey, chain)
+				if err != nil {
 					return errors.WithStack(err)
 				}
+
+				a.setCertificate(certRaw)
 
 				waitCh = renewTimerFunc(expirationTime)
 
@@ -351,6 +409,13 @@ func run(ctx context.Context, config Config) error {
 			log.Error("Certificate issuance failed", zap.Error(err))
 		}
 	}
+}
+
+func (a *acme) setCertificate(cert []byte) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.certificate = cert
 }
 
 type account struct {
@@ -415,38 +480,55 @@ func registerAccount(ctx context.Context, client *goacme.Client, email string) (
 	return client.KID, nil
 }
 
-func readCertificateExpirationTime(certFile string) (time.Time, error) {
+func readCertificate(certFile string) ([]byte, error) {
 	cert, err := os.ReadFile(certFile)
 	if err != nil {
-		return time.Time{}, errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
+	return cert, nil
+}
 
-	block, _ := pem.Decode(cert)
-	if block == nil {
-		return time.Time{}, errors.New("file does not contain certificate")
+func readCertificateExpirationTime(cert []byte) (time.Time, error) {
+	var block *pem.Block
+	for {
+		block, cert = pem.Decode(cert)
+		if block == nil {
+			return time.Time{}, errors.New("file does not contain certificate")
+		}
+		if block.Type == "CERTIFICATE" {
+			break
+		}
 	}
 
 	return certificateExpirationTime(block.Bytes)
 }
 
-func storeCertificate(certFile string, chain [][]byte) error {
+func storeCertificate(certFile string, key *ecdsa.PrivateKey, chain [][]byte) ([]byte, error) {
 	if err := os.MkdirAll(filepath.Dir(certFile), 0o700); err != nil {
-		return errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
 
-	certF, err := os.OpenFile(certFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	keyRaw, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
-		return errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
-	defer certF.Close()
 
+	buf := bytes.NewBuffer(nil)
+
+	if err := pem.Encode(buf, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyRaw}); err != nil {
+		return nil, errors.WithStack(err)
+	}
 	for _, cert := range chain {
-		if err := pem.Encode(certF, &pem.Block{Type: "CERTIFICATE", Bytes: cert}); err != nil {
-			return errors.WithStack(err)
+		if err := pem.Encode(buf, &pem.Block{Type: "CERTIFICATE", Bytes: cert}); err != nil {
+			return nil, errors.WithStack(err)
 		}
 	}
 
-	return nil
+	if err := os.WriteFile(certFile, buf.Bytes(), 0o600); err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	return buf.Bytes(), nil
 }
 
 func certificateExpirationTime(cert []byte) (time.Time, error) {
