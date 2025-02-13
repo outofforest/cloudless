@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	endpointGrafana = "grafana"
+	endpointGrafana ingress.EndpointID = "grafana"
 )
 
 var (
@@ -88,30 +88,14 @@ var deployment = Deployment(
 			firewall.RedirectV4TCPPort("10.0.0.155", 3002, "10.0.1.2", 3002),
 		),
 		ingress.Service(
-			ingress.Config{
-				CertificateURL: "http://10.0.2.6:" + strconv.FormatUint(acme.Port, 10),
-				Endpoints: map[ingress.EndpointID]ingress.Endpoint{
-					endpointGrafana: {
-						Path:            "/",
-						AllowedDomains:  []string{"dev.onem.network"},
-						AllowedMethods:  []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
-						AllowWebsockets: true,
-						HTTPSMode:       ingress.HTTPSModeOnly,
-						SecureBindings: []string{
-							"93.179.253.132:443",
-						},
-					},
-				},
-				Targets: map[ingress.EndpointID][]ingress.Target{
-					endpointGrafana: {
-						{
-							Host: "10.0.1.2",
-							Port: 3000,
-							Path: "/",
-						},
-					},
-				},
-			},
+			ingress.CertificateURL("http://10.0.2.6:"+strconv.FormatUint(acme.Port, 10)),
+			ingress.Endpoint(endpointGrafana,
+				ingress.Domains("dev.onem.network"),
+				ingress.Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete),
+				ingress.EnableWebsockets(),
+				ingress.TLSBindings("93.179.253.132:443"),
+			),
+			ingress.Target(endpointGrafana, "10.0.1.2", 3000, "/"),
 		),
 		vnet.NAT("dns", "52:54:00:6a:94:c0", vnet.IP4("10.0.3.1/24")),
 		vm.New("dns01", 2, 2, vm.Network("dns", "52:54:00:6a:94:c1")),
