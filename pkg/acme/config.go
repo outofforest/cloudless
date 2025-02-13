@@ -23,6 +23,7 @@ type Configurator func(c *Config)
 
 // DirectoryConfig is the config of ACME directory service.
 type DirectoryConfig struct {
+	Name          string
 	Provider      string
 	DirectoryURL  string
 	Insecure      bool
@@ -32,6 +33,7 @@ type DirectoryConfig struct {
 var (
 	// LetsEncrypt is the LetsEncrypt production config.
 	LetsEncrypt = DirectoryConfig{
+		Name:          "lestsencrypt",
 		Provider:      "letsencrypt.org",
 		DirectoryURL:  "https://acme-v02.api.letsencrypt.org/directory",
 		RenewDuration: time.Hour * 24 * 29, // 29 days
@@ -39,6 +41,7 @@ var (
 
 	// LetsEncryptStaging is the LetsEncrypt staging config.
 	LetsEncryptStaging = DirectoryConfig{
+		Name:          "lestsencrypt-staging",
 		Provider:      "letsencrypt.org",
 		DirectoryURL:  "https://acme-staging-v02.api.letsencrypt.org/directory",
 		RenewDuration: 30 * time.Minute,
@@ -48,6 +51,7 @@ var (
 // Pebble returns directory config for pebble.
 func Pebble(host string) DirectoryConfig {
 	return DirectoryConfig{
+		Name:          "pebble",
 		Provider:      "pebble",
 		DirectoryURL:  tnet.JoinScheme("https", host, pebble.Port) + "/dir",
 		Insecure:      true,

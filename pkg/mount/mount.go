@@ -2,6 +2,7 @@ package mount
 
 import (
 	"archive/tar"
+	"encoding/pem"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/pkg/errors"
 )
+
+const caCertFile = "etc/ssl/cert.pem"
 
 // ProcFS mounts procfs.
 func ProcFS(dir string) error {
@@ -136,6 +139,9 @@ func ContainerRoot() error {
 		return err
 	}
 	if err := populateDev(); err != nil {
+		return err
+	}
+	if err := storeRootCertificates(); err != nil {
 		return err
 	}
 	return pivotRoot()
@@ -279,4 +285,96 @@ func populateDev() error {
 		}
 	}
 	return nil
+}
+
+// Possible certificate files; stop after finding one.
+var certFiles = []string{
+	"/etc/ssl/certs/ca-certificates.crt",                // Debian/Ubuntu/Gentoo etc.
+	"/etc/pki/tls/certs/ca-bundle.crt",                  // Fedora/RHEL 6
+	"/etc/ssl/ca-bundle.pem",                            // OpenSUSE
+	"/etc/pki/tls/cacert.pem",                           // OpenELEC
+	"/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // CentOS/RHEL 7
+	"/etc/ssl/cert.pem",                                 // Alpine Linux
+}
+
+// Possible directories with certificate files; all will be read.
+var certDirectories = []string{
+	"/etc/ssl/certs",     // SLES10/SLES11, https://golang.org/issue/12139
+	"/etc/pki/tls/certs", // Fedora/RHEL
+}
+
+func storeRootCertificates() error {
+	if err := os.MkdirAll(filepath.Dir(caCertFile), 0o755); err != nil {
+		return errors.WithStack(err)
+	}
+
+	certF, err := os.OpenFile(caCertFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer certF.Close()
+
+	visited := map[string]struct{}{}
+	for _, file := range certFiles {
+		if err := appendCerts(certF, file, visited); err != nil {
+			return err
+		}
+	}
+
+	for _, directory := range certDirectories {
+		entries, err := os.ReadDir(directory)
+		switch {
+		case err == nil:
+			for _, e := range entries {
+				if e.IsDir() {
+					continue
+				}
+
+				if err := appendCerts(certF, filepath.Join(directory, e.Name()), visited); err != nil {
+					return err
+				}
+			}
+		case os.IsNotExist(err):
+		default:
+			return errors.WithStack(err)
+		}
+	}
+
+	return nil
+}
+
+func appendCerts(w io.Writer, file string, visited map[string]struct{}) error {
+	file, err := filepath.Abs(file)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	if _, exists := visited[file]; exists {
+		return nil
+	}
+	visited[file] = struct{}{}
+
+	data, err := os.ReadFile(file)
+	switch {
+	case err == nil:
+	case os.IsNotExist(err):
+		return nil
+	default:
+		return errors.WithStack(err)
+	}
+
+	for {
+		var block *pem.Block
+		block, data = pem.Decode(data)
+		if block == nil {
+			return nil
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+
+		if err := pem.Encode(w, block); err != nil {
+			return errors.WithStack(err)
+		}
+	}
 }

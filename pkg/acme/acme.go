@@ -35,7 +35,7 @@ import (
 
 const (
 	// Port is the port where cert is served.
-	Port = 8081
+	Port = 80
 
 	rerunInterval            = 5 * time.Second
 	dnsACMEConnectionTimeout = 20 * time.Second
@@ -52,8 +52,8 @@ func Service(storeDir string, dirConfig DirectoryConfig, configurators ...Config
 		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
 		cloudless.Service("acme", parallel.Fail, func(ctx context.Context) error {
 			config := Config{
-				AccountFile: filepath.Join(storeDir, accountFile),
-				CertFile:    filepath.Join(storeDir, certFile),
+				AccountFile: filepath.Join(storeDir, dirConfig.Name, accountFile),
+				CertFile:    filepath.Join(storeDir, dirConfig.Name, certFile),
 				Directory:   dirConfig,
 			}
 
