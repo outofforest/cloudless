@@ -22,12 +22,12 @@ import (
 )
 
 const (
-	interval = 10 * time.Second
-	timeout  = time.Second
+	uploadInterval = 15 * time.Second
+	timeout        = time.Second
 )
 
-// Service returns new prometheus metric uploader service.
-func Service(prometheusURL string) host.Configurator {
+// UploadService returns new prometheus metric uploader service.
+func UploadService(prometheusURL string) host.Configurator {
 	var c *host.Configuration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
@@ -53,7 +53,7 @@ func Service(prometheusURL string) host.Configurator {
 				return errors.WithStack(err)
 			}
 
-			timer := time.NewTicker(interval)
+			timer := time.NewTicker(uploadInterval)
 			defer timer.Stop()
 
 			for {

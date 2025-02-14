@@ -37,6 +37,7 @@ var (
 		YumMirrors("http://10.0.0.100"),
 		acpi.PowerService(),
 		ntp.Service(),
+		eye.CollectService(),
 		ssh.Service("AAAAC3NzaC1lZDI1NTE5AAAAIEcJvvtOBgTsm3mq3Sg8cjn6Mz/vC9f3k6a89ZOjIyF6"),
 	)
 
@@ -62,7 +63,7 @@ var (
 var deployment = Deployment(
 	ImmediateKernelModules(DefaultKernelModules...),
 	DNS(DefaultDNS...),
-	eye.Service("http://10.0.0.155:3001"),
+	eye.UploadService("http://10.0.0.155:3001"),
 	RemoteLogging("http://10.0.0.155:3002"),
 	Host("pxe",
 		Gateway("10.0.0.1"),
@@ -157,7 +158,7 @@ var deployment = Deployment(
 		grafana.Container("/tmp/app/grafana",
 			grafana.DataSource("Prometheus", grafana.DataSourcePrometheus, "http://10.0.2.3:"+strconv.Itoa(prometheus.Port)),
 			grafana.DataSource("Loki", grafana.DataSourceLoki, "http://10.0.2.4:"+strconv.Itoa(loki.Port)),
-			grafana.Dashboards(host.DashboardBoxes),
+			grafana.Dashboards(host.DashboardBoxes, eye.Dashboard),
 		),
 	),
 	Container("prometheus",
