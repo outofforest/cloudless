@@ -9,6 +9,7 @@ import (
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/eye/collectors/cpu"
 	"github.com/outofforest/cloudless/pkg/eye/collectors/memory"
+	"github.com/outofforest/cloudless/pkg/eye/collectors/mounts"
 	"github.com/outofforest/cloudless/pkg/eye/collectors/network"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/parallel"
@@ -20,6 +21,7 @@ var collectors = []func() (string, prometheus.Gatherer, parallel.Task){
 	cpu.New(collectInterval),
 	memory.New(collectInterval),
 	network.New(collectInterval),
+	mounts.New(collectInterval),
 }
 
 // CollectService returns new service collecting system metrics.
