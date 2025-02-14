@@ -110,12 +110,14 @@ func newMetrics() (*metrics, prometheus.Gatherer) {
 	r := prometheus.NewRegistry()
 	return &metrics{
 		registry: r,
+		//nolint:promlinter
 		receivedBytes: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "received_bytes_total",
 			Help:      "Number of bytes received",
 		}, []string{labelIface}),
+		//nolint:promlinter
 		transmittedBytes: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
