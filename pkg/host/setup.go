@@ -1031,34 +1031,28 @@ func unmount() error {
 		return errors.Wrap(err, "reading /proc/mounts failed")
 	}
 
-	final := []string{}
+	mounts := []string{}
 	for _, mount := range strings.Split(string(mountsRaw), "\n") {
-		props := strings.SplitN(mount, " ", 4)
+		props := strings.SplitN(mount, " ", 3)
 		if len(props) < 2 {
 			// last empty line
 			break
 		}
 		mountPoint := props[1]
-		mountType := props[2]
-		if mountPoint == "/" {
-			// Managed by vmlinuz.
-			continue
-		}
 
-		switch mountType {
-		case "proc", "sysfs", "devtmpfs":
-			// special mounts, unmounting them at the end
-			final = append(final, mountPoint)
-		default:
-			if err := syscall.Unmount(mountPoint, 0); err != nil {
-				return errors.Wrapf(err, "unmounting failed: %s", mountPoint)
-			}
+		// Managed by vmlinuz.
+		if mountPoint != "/" {
+			mounts = append(mounts, mountPoint)
 		}
 	}
 
-	for _, mountPoint := range final {
-		if err := syscall.Unmount(mountPoint, 0); err != nil {
-			return errors.Wrapf(err, "unmounting failed: %s", mountPoint)
+	// Thanks to this trick shorter strings, come first.
+	// If we unmount from the end of the slice, it is guaranteed that child mounts are unmounted before parents.
+	sort.Strings(mounts)
+
+	for i := len(mounts) - 1; i >= 0; i-- {
+		if err := syscall.Unmount(mounts[i], 0); err != nil {
+			return errors.Wrapf(err, "unmounting failed: %s", mounts[i])
 		}
 	}
 
