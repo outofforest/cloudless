@@ -60,9 +60,9 @@ var (
 				dns.MailExchange("mail.protonmail.ch", 10),
 				dns.MailExchange("mailsec.protonmail.ch", 20),
 				dns.Text("dev.onem.network", "v=spf1 a:mail.dev.onem.network include:_spf.protonmail.ch ~all"),
-				dns.Alias("protonmail._domainkey.dev.onem.network", "protonmail.domainkey.dgd2ylhxf2ktsqiwayacsln52gnwt3zfy6jhrbdijudy3c64my3pa.domains.proton.ch"),
-				dns.Alias("protonmail2._domainkey.dev.onem.network", "protonmail2.domainkey.dgd2ylhxf2ktsqiwayacsln52gnwt3zfy6jhrbdijudy3c64my3pa.domains.proton.ch"),
-				dns.Alias("protonmail3._domainkey.dev.onem.network", "protonmail3.domainkey.dgd2ylhxf2ktsqiwayacsln52gnwt3zfy6jhrbdijudy3c64my3pa.domains.proton.ch"),
+				dns.Alias("protonmail._domainkey.dev.onem.network", "protonmail.domainkey.dgd2ylhxf2ktsqiwayacsln52gnwt3zfy6jhrbdijudy3c64my3pa.domains.proton.ch"),   //nolint:lll
+				dns.Alias("protonmail2._domainkey.dev.onem.network", "protonmail2.domainkey.dgd2ylhxf2ktsqiwayacsln52gnwt3zfy6jhrbdijudy3c64my3pa.domains.proton.ch"), //nolint:lll
+				dns.Alias("protonmail3._domainkey.dev.onem.network", "protonmail3.domainkey.dgd2ylhxf2ktsqiwayacsln52gnwt3zfy6jhrbdijudy3c64my3pa.domains.proton.ch"), //nolint:lll
 				dns.Text("_dmarc.dev.onem.network", "v=DMARC1; p=quarantine"),
 			),
 		),
