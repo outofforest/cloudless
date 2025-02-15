@@ -64,7 +64,7 @@ func Pebble(host string) DirectoryConfig {
 func DNSACMEs(dnsACMEs ...string) Configurator {
 	return func(c *Config) {
 		for _, dnsACME := range dnsACMEs {
-			c.DNSACME = append(c.DNSACME, tnet.Join(dnsACME, dnsacme.Port))
+			c.DNSACME = append(c.DNSACME, dnsacme.Address(dnsACME))
 		}
 	}
 }

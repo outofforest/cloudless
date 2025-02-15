@@ -46,7 +46,8 @@ func NewServer(port uint16) *Server {
 
 // Server is the ACME server accepting DNS challenges.
 type Server struct {
-	port       uint16
+	port uint16
+
 	mu         sync.Mutex
 	challenges map[string]map[uuid.UUID]acmeRecord
 }

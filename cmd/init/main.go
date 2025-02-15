@@ -11,6 +11,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/container"
 	containercache "github.com/outofforest/cloudless/pkg/container/cache"
 	"github.com/outofforest/cloudless/pkg/dns"
+	"github.com/outofforest/cloudless/pkg/email"
 	"github.com/outofforest/cloudless/pkg/eye"
 	"github.com/outofforest/cloudless/pkg/grafana"
 	"github.com/outofforest/cloudless/pkg/host"
@@ -50,6 +51,7 @@ var (
 	HostDNS = ExtendBoxFactory(Host,
 		dns.Service(
 			dns.ACME(),
+			dns.DKIM(),
 			dns.Zone("dev.onem.network", "ns1.dev.onem.network", "wojtek@exw.co", 1,
 				dns.Nameservers("ns1.dev.onem.network", "ns2.dev.onem.network"),
 				dns.Domain("ns1.dev.onem.network", "93.179.253.130"),
@@ -107,6 +109,9 @@ var deployment = Deployment(
 				ingress.TLSBindings("93.179.253.132:443"),
 			),
 			ingress.Target(endpointGrafana, "10.0.1.2", 3000, "/"),
+		),
+		email.Service(
+			email.DNSDKIMs("10.0.3.2", "10.0.3.3"),
 		),
 		vnet.NAT("dns", "52:54:00:6a:94:c0", vnet.IP4("10.0.3.1/24")),
 		vm.New("dns01", 2, 2, vm.Network("dns", "52:54:00:6a:94:c1")),

@@ -12,6 +12,7 @@ import (
 
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/dns/acme"
+	"github.com/outofforest/cloudless/pkg/dns/dkim"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/logger"
@@ -23,12 +24,11 @@ const (
 	// Port is the port DNS listens on.
 	Port = 53
 
-	bufferSize        = 1500
-	maxMsgLength      = 512
-	headerSize        = 12
-	ttl               = 60
-	maxAnswers        = 10
-	forwardChCapacity = 10
+	bufferSize          = 1500
+	defaultMaxMsgLength = 512
+	headerSize          = 12
+	ttl                 = 60
+	forwardChCapacity   = 10
 
 	classInternet = 1
 
@@ -38,6 +38,7 @@ const (
 	typeCNAME = 5
 	typeMX    = 15
 	typeTXT   = 16
+	typeOPT   = 41
 	typeCAA   = 257
 
 	rCodeOK             = 0
@@ -53,6 +54,7 @@ func Service(configurators ...Configurator) host.Configurator {
 	config := Config{
 		DNSPort:  Port,
 		ACMEPort: acme.Port,
+		DKIMPort: dkim.Port,
 		Zones:    map[string]ZoneConfig{},
 	}
 	for _, configurator := range configurators {
@@ -65,17 +67,23 @@ func Service(configurators ...Configurator) host.Configurator {
 			return run(ctx, config)
 		}),
 		cloudless.If(config.EnableACME, cloudless.Firewall(firewall.OpenV4TCPPort(config.ACMEPort))),
+		cloudless.If(config.EnableDKIM, cloudless.Firewall(firewall.OpenV4TCPPort(config.DKIMPort))),
 	)
 }
 
 func run(ctx context.Context, config Config) error {
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		var acmeServer *acme.Server
+		var dkimServer *dkim.Server
 		var forwardCh chan forwardRequest
 
 		if config.EnableACME {
 			acmeServer = acme.NewServer(config.ACMEPort)
 			spawn("acme", parallel.Fail, acmeServer.Run)
+		}
+		if config.EnableACME {
+			dkimServer = dkim.NewServer(config.DKIMPort)
+			spawn("dkim", parallel.Fail, dkimServer.Run)
 		}
 		if len(config.ForwardFor) > 0 && len(config.ForwardTo) > 0 {
 			forwardCh = make(chan forwardRequest, forwardChCapacity)
@@ -90,7 +98,7 @@ func run(ctx context.Context, config Config) error {
 			}
 
 			for {
-				if err := runResolver(ctx, config, forwardCh, acmeServer); err != nil {
+				if err := runResolver(ctx, config, forwardCh, acmeServer, dkimServer); err != nil {
 					if errors.Is(err, ctx.Err()) {
 						return err
 					}
@@ -104,7 +112,13 @@ func run(ctx context.Context, config Config) error {
 }
 
 //nolint:gocyclo
-func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardRequest, acmeServer *acme.Server) error {
+func runResolver(
+	ctx context.Context,
+	config Config,
+	forwardCh chan<- forwardRequest,
+	acmeServer *acme.Server,
+	dkimServer *dkim.Server,
+) error {
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{
 		IP:   net.IPv4zero,
 		Port: int(config.DNSPort),
@@ -131,6 +145,7 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 			var queryID uint64
 			cm := &ipv4.ControlMessage{}
 
+		loop:
 			for {
 				n, noob, _, addr, err := conn.ReadMsgUDP(buff, ooBuff)
 				if err != nil {
@@ -150,15 +165,17 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 					if err := sendError(h, addr, conn, buff, cm); err != nil {
 						return err
 					}
-					continue
+					continue loop
 				}
 				if h.Opcode != 0x00 || h.QDCount > 1 {
 					h.RCode = rCodeNotImplemented
 					if err := sendError(h, addr, conn, buff, cm); err != nil {
 						return err
 					}
-					continue
+					continue loop
 				}
+
+				arCount := h.ARCount
 
 				h.QR = true
 				h.AA = true
@@ -168,23 +185,64 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 				h.NSCount = 0
 				h.ARCount = 0
 
-				q, ok := readQuery(buff[headerSize:n])
+				q, b, ok := readQuery(buff[headerSize:n])
 				if !ok || q.QName == "" {
 					h.RCode = rCodeFormatError
 					if err := sendError(h, addr, conn, buff, cm); err != nil {
 						return err
 					}
-					continue
+					continue loop
 				}
 
-				b := putQuery(q, buff[headerSize:headerSize], &h)
+				var maxMsgLength uint16 = defaultMaxMsgLength
+
+				var opt *rRecord
+				for range arCount {
+					var r rRecord
+					var ok bool
+
+					r, b, ok = readRecord(b)
+					if !ok || uint16(len(b)) < r.RDLength {
+						h.RCode = rCodeFormatError
+						if err := sendError(h, addr, conn, buff, cm); err != nil {
+							return err
+						}
+						continue loop
+					}
+					b = b[r.RDLength:]
+
+					if r.Type != typeOPT {
+						continue
+					}
+
+					if opt != nil || r.Name != "" || r.Class < defaultMaxMsgLength {
+						h.RCode = rCodeFormatError
+						if err := sendError(h, addr, conn, buff, cm); err != nil {
+							return err
+						}
+						continue loop
+					}
+
+					opt = &r
+
+					opt.TTL = 0
+					opt.RDLength = 0
+
+					if opt.Class > bufferSize {
+						opt.Class = bufferSize
+					}
+
+					maxMsgLength = opt.Class
+				}
+
+				b = putQuery(q, buff[headerSize:headerSize], &h, maxMsgLength)
 
 				if q.QClass != classInternet {
 					h.RCode = rCodeNotImplemented
 					if err := sendError(h, addr, conn, b, cm); err != nil {
 						return err
 					}
-					continue
+					continue loop
 				}
 
 				q.QName = strings.ToLower(q.QName)
@@ -217,7 +275,7 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 								return err
 							}
 						}
-						continue
+						continue loop
 					}
 
 					h.RCode = rCodeRefused
@@ -225,11 +283,15 @@ func runResolver(ctx context.Context, config Config, forwardCh chan<- forwardReq
 						return err
 					}
 
-					continue
+					continue loop
 				}
 
 				queryID++
-				b = resolve(q, zConfig, b, queryID, acmeServer, &h)
+				b = resolve(q, zConfig, b, queryID, acmeServer, dkimServer, &h, maxMsgLength)
+
+				if opt != nil {
+					b = putRecord(*opt, b, &h, maxMsgLength)
+				}
 
 				putHeader(h, buff[:0])
 
@@ -272,7 +334,16 @@ func sendError(h header, addr *net.UDPAddr, conn *net.UDPConn, b []byte, cm *ipv
 }
 
 //nolint:gocyclo
-func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *acme.Server, h *header) []byte {
+func resolve(
+	q query,
+	zConfig ZoneConfig,
+	b []byte,
+	queryID uint64,
+	acmeServer *acme.Server,
+	dkimServer *dkim.Server,
+	h *header,
+	maxMsgLength uint16,
+) []byte {
 	switch q.QType {
 	case typeSOA:
 		if q.QName != zConfig.Domain {
@@ -287,7 +358,7 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 			Class:    classInternet,
 			TTL:      ttl,
 			RDLength: nameLen(zConfig.MainNameserver) + nameLen(email) + 20,
-		}, b, h)
+		}, b, h, maxMsgLength)
 		if h.TC {
 			return b
 		}
@@ -313,7 +384,7 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 				Class:    classInternet,
 				TTL:      ttl,
 				RDLength: nameLen(ns),
-			}, b, h)
+			}, b, h, maxMsgLength)
 			if h.TC {
 				return b
 			}
@@ -333,7 +404,7 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 				Class:    classInternet,
 				TTL:      ttl,
 				RDLength: 2 + nameLen(d),
-			}, b, h)
+			}, b, h, maxMsgLength)
 			if h.TC {
 				return b
 			}
@@ -364,7 +435,7 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 			Class:    classInternet,
 			TTL:      ttl,
 			RDLength: nameLen(alias.Target),
-		}, b, h)
+		}, b, h, maxMsgLength)
 		if h.TC {
 			return b
 		}
@@ -389,7 +460,7 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 				Class:    classInternet,
 				TTL:      ttl,
 				RDLength: 4,
-			}, b, h)
+			}, b, h, maxMsgLength)
 			if h.TC {
 				return b
 			}
@@ -397,22 +468,48 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 		}
 	case typeTXT:
 		values := zConfig.Texts[q.QName]
-		if len(values) == 0 && acmeServer != nil && strings.HasPrefix(q.QName, acme.DomainPrefix) {
-			values = acmeServer.QueryTXT(strings.TrimPrefix(q.QName, acme.DomainPrefix))
+		if len(values) == 0 {
+			switch {
+			case acmeServer != nil && strings.HasPrefix(q.QName, acme.DomainPrefix):
+				values = acmeServer.QueryTXT(strings.TrimPrefix(q.QName, acme.DomainPrefix))
+			case dkimServer != nil && strings.HasSuffix(q.QName, dkim.DomainPrefix+zConfig.Domain):
+				publicKey := dkimServer.PublicKey(strings.TrimSuffix(q.QName, dkim.DomainPrefix+zConfig.Domain))
+				if publicKey != "" {
+					values = []string{"v=DKIM1;k=rsa;p=" + publicKey}
+				}
+			}
 		}
 		for _, v := range values {
+			iLength := len(v)
+			var oLength uint16
+			for iLength > 0 {
+				if iLength < 256 {
+					oLength += uint16(iLength) + 1
+					break
+				}
+				oLength += 256
+				iLength -= 255
+			}
 			b = putRecord(rRecord{
 				Name:     q.QName,
 				Type:     typeTXT,
 				Class:    classInternet,
 				TTL:      ttl,
-				RDLength: uint16(len(v)) + 1,
-			}, b, h)
+				RDLength: oLength,
+			}, b, h, maxMsgLength)
 			if h.TC {
 				return b
 			}
-			b = append(b, uint8(len(v)))
-			b = append(b, v...)
+			for len(v) > 0 {
+				if len(v) < 256 {
+					b = append(b, uint8(len(v)))
+					b = append(b, v...)
+					break
+				}
+				b = append(b, uint8(255))
+				b = append(b, v[:255]...)
+				v = v[255:]
+			}
 		}
 	case typeCAA:
 		var values []acme.CAA
@@ -437,7 +534,7 @@ func resolve(q query, zConfig ZoneConfig, b []byte, queryID uint64, acmeServer *
 				Class:    classInternet,
 				TTL:      ttl,
 				RDLength: 2 + uint16(len(v.Tag)) + uint16(len(v.Value)),
-			}, b, h)
+			}, b, h, maxMsgLength)
 			if h.TC {
 				return b
 			}
@@ -485,27 +582,51 @@ func readHeader(b []byte) (header, bool) {
 	h.RA = b[3]&0x80 != 0x00
 	h.RCode = b[3] & 0x0f
 	h.QDCount = binary.BigEndian.Uint16(b[4:])
+	h.ANCount = binary.BigEndian.Uint16(b[6:])
+	h.NSCount = binary.BigEndian.Uint16(b[8:])
+	h.ARCount = binary.BigEndian.Uint16(b[10:])
 
 	return h, true
 }
 
-func readQuery(b []byte) (query, bool) {
+func readQuery(b []byte) (query, []byte, bool) {
 	var q query
 	var ok bool
 
 	q.QName, b, ok = readName(b)
 	if !ok {
-		return query{}, false
+		return query{}, nil, false
 	}
 
 	if len(b) < 4 {
-		return query{}, false
+		return query{}, nil, false
 	}
 
 	q.QType = binary.BigEndian.Uint16(b)
 	q.QClass = binary.BigEndian.Uint16(b[2:])
 
-	return q, true
+	return q, b[4:], true
+}
+
+func readRecord(b []byte) (rRecord, []byte, bool) {
+	var r rRecord
+	var ok bool
+
+	r.Name, b, ok = readName(b)
+	if !ok {
+		return rRecord{}, nil, false
+	}
+
+	if len(b) < 10 {
+		return rRecord{}, nil, false
+	}
+
+	r.Type = binary.BigEndian.Uint16(b)
+	r.Class = binary.BigEndian.Uint16(b[2:])
+	r.TTL = binary.BigEndian.Uint32(b[4:])
+	r.RDLength = binary.BigEndian.Uint16(b[8:])
+
+	return r, b[10:], true
 }
 
 func readName(b []byte) (string, []byte, bool) {
@@ -557,7 +678,7 @@ func putHeader(h header, b []byte) {
 	binary.BigEndian.AppendUint16(b, h.ARCount)
 }
 
-func putQuery(q query, b []byte, h *header) []byte {
+func putQuery(q query, b []byte, h *header, maxMsgLength uint16) []byte {
 	length := uint16(len(b)) + nameLen(q.QName) + 4
 	if length > maxMsgLength {
 		h.TC = true
@@ -570,14 +691,18 @@ func putQuery(q query, b []byte, h *header) []byte {
 	return binary.BigEndian.AppendUint16(b, q.QClass)
 }
 
-func putRecord(r rRecord, b []byte, h *header) []byte {
+func putRecord(r rRecord, b []byte, h *header, maxMsgLength uint16) []byte {
 	length := uint16(len(b)) + nameLen(r.Name) + 10 + r.RDLength + headerSize
-	if length > maxMsgLength || h.ANCount >= maxAnswers {
+	if length > maxMsgLength {
 		h.TC = true
 		return nil
 	}
 
-	h.ANCount++
+	if r.Type == typeOPT {
+		h.ARCount++
+	} else {
+		h.ANCount++
+	}
 	b = putName(r.Name, b)
 	b = binary.BigEndian.AppendUint16(b, r.Type)
 	b = binary.BigEndian.AppendUint16(b, r.Class)
@@ -586,14 +711,19 @@ func putRecord(r rRecord, b []byte, h *header) []byte {
 }
 
 func putName(name string, b []byte) []byte {
-	for _, part := range strings.Split(name, ".") {
-		b = append(b, uint8(len(part)))
-		b = append(b, part...)
+	if name != "" {
+		for _, part := range strings.Split(name, ".") {
+			b = append(b, uint8(len(part)))
+			b = append(b, part...)
+		}
 	}
 	return append(b, 0x00)
 }
 
 func nameLen(name string) uint16 {
+	if name == "" {
+		return 1
+	}
 	return uint16(len(name)) + 2
 }
 
