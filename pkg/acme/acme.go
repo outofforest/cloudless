@@ -47,11 +47,12 @@ const (
 )
 
 // Service returns new acme client service.
-func Service(storeDir string, dirConfig DirectoryConfig, configurators ...Configurator) host.Configurator {
+func Service(storeDir, email string, dirConfig DirectoryConfig, configurators ...Configurator) host.Configurator {
 	return cloudless.Join(
 		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
 		cloudless.Service("acme", parallel.Fail, func(ctx context.Context) error {
 			config := Config{
+				Email:       email,
 				AccountFile: filepath.Join(storeDir, dirConfig.Name, accountFile),
 				CertFile:    filepath.Join(storeDir, dirConfig.Name, certFile),
 				Directory:   dirConfig,
@@ -163,7 +164,7 @@ func (a *acme) runIssuer(ctx context.Context) error {
 
 		client.Key = key
 
-		keyID, err = registerAccount(ctx, client, "wojtek@exw.co")
+		keyID, err = registerAccount(ctx, client, a.config.Email)
 		if err != nil {
 			return errors.WithStack(err)
 		}
