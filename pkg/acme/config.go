@@ -11,6 +11,7 @@ import (
 
 // Config stores acme configuration.
 type Config struct {
+	Email       string
 	AccountFile string
 	CertFile    string
 	Directory   DirectoryConfig
