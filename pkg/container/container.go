@@ -25,7 +25,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/outofforest/cloudless"
-	"github.com/outofforest/cloudless/pkg/cnet"
 	"github.com/outofforest/cloudless/pkg/container/cache"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/parse"
@@ -54,8 +53,8 @@ type Config struct {
 
 // NetworkConfig represents container's network configuration.
 type NetworkConfig struct {
-	Name string
-	MAC  net.HardwareAddr
+	BridgeName string
+	MAC        net.HardwareAddr
 }
 
 // Configurator defines function setting the container configuration.
@@ -112,11 +111,11 @@ func New(name, containerDir string, configurators ...Configurator) host.Configur
 }
 
 // Network adds network to the config.
-func Network(name, mac string) Configurator {
+func Network(bridgeName, mac string) Configurator {
 	return func(c *Config) {
 		c.Networks = append(c.Networks, NetworkConfig{
-			Name: name,
-			MAC:  parse.MAC(mac),
+			BridgeName: bridgeName,
+			MAC:        parse.MAC(mac),
 		})
 	}
 }
@@ -293,7 +292,7 @@ func command(ctx context.Context, config Config) (*exec.Cmd, io.Closer, error) {
 
 func joinNetworks(pid int, config Config) error {
 	for _, n := range config.Networks {
-		link, err := netlink.LinkByName(cnet.BridgeName(n.Name))
+		link, err := netlink.LinkByName(n.BridgeName)
 		if err != nil {
 			return errors.WithStack(err)
 		}
@@ -302,7 +301,7 @@ func joinNetworks(pid int, config Config) error {
 			return errors.New("link is not a bridge")
 		}
 
-		name := vethName(config.Name, n.Name)
+		name := vethName(config.Name, n.BridgeName)
 		hostVETHName := name + "0"
 		containerVETHName := name + "1"
 
