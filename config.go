@@ -144,10 +144,11 @@ func Gateway(gateway string) host.Configurator {
 }
 
 // Network defines network.
-func Network(mac string, ips ...string) host.Configurator {
+func Network(mac, ifaceName string, ips ...string) host.Configurator {
 	n := host.NetworkConfig{
-		MAC: parse.MAC(mac),
-		IPs: make([]net.IPNet, 0, len(ips)),
+		InterfaceName: ifaceName,
+		MAC:           parse.MAC(mac),
+		IPs:           make([]net.IPNet, 0, len(ips)),
 	}
 	for _, ip := range ips {
 		if strings.Contains(ip, ".") {
