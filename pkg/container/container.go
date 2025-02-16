@@ -25,6 +25,7 @@ import (
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/container/cache"
 	"github.com/outofforest/cloudless/pkg/host"
+	"github.com/outofforest/cloudless/pkg/kernel"
 	"github.com/outofforest/cloudless/pkg/parse"
 	"github.com/outofforest/cloudless/pkg/retry"
 	"github.com/outofforest/libexec"
@@ -88,25 +89,28 @@ func New(name, containerDir string, configurators ...Configurator) host.Configur
 		configurator(&config)
 	}
 
-	return cloudless.Service("container-"+name, parallel.Fail, func(ctx context.Context) error {
-		cmd, stdInCloser, err := command(ctx, config)
-		if err != nil {
-			return err
-		}
-		if err := cmd.Start(); err != nil {
-			return errors.WithStack(err)
-		}
+	return cloudless.Join(
+		cloudless.KernelModules(kernel.Module{Name: "veth"}),
+		cloudless.Service("container-"+name, parallel.Fail, func(ctx context.Context) error {
+			cmd, stdInCloser, err := command(ctx, config)
+			if err != nil {
+				return err
+			}
+			if err := cmd.Start(); err != nil {
+				return errors.WithStack(err)
+			}
 
-		if err := joinNetworks(cmd.Process.Pid, config); err != nil {
-			return err
-		}
+			if err := joinNetworks(cmd.Process.Pid, config); err != nil {
+				return err
+			}
 
-		if err := stdInCloser.Close(); err != nil {
-			return errors.WithStack(err)
-		}
+			if err := stdInCloser.Close(); err != nil {
+				return errors.WithStack(err)
+			}
 
-		return errors.WithStack(cmd.Wait())
-	})
+			return errors.WithStack(cmd.Wait())
+		}),
+	)
 }
 
 // Network adds network to the config.
