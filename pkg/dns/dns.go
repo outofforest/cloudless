@@ -14,7 +14,6 @@ import (
 	"github.com/outofforest/cloudless/pkg/dns/acme"
 	"github.com/outofforest/cloudless/pkg/dns/dkim"
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/mass"
 	"github.com/outofforest/parallel"
@@ -61,14 +60,9 @@ func Service(configurators ...Configurator) host.Configurator {
 		configurator(&config)
 	}
 
-	return cloudless.Join(
-		cloudless.Firewall(firewall.OpenV4UDPPort(config.DNSPort)),
-		cloudless.Service("dns", parallel.Fail, func(ctx context.Context) error {
-			return run(ctx, config)
-		}),
-		cloudless.If(config.EnableACME, cloudless.Firewall(firewall.OpenV4TCPPort(config.ACMEPort))),
-		cloudless.If(config.EnableDKIM, cloudless.Firewall(firewall.OpenV4TCPPort(config.DKIMPort))),
-	)
+	return cloudless.Service("dns", parallel.Fail, func(ctx context.Context) error {
+		return run(ctx, config)
+	})
 }
 
 func run(ctx context.Context, config Config) error {

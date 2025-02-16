@@ -5,7 +5,6 @@ import (
 
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/cloudless/pkg/kernel"
 	"github.com/outofforest/cloudless/pkg/pxe/dhcp6"
 	"github.com/outofforest/cloudless/pkg/pxe/tftp"
@@ -15,10 +14,6 @@ import (
 // Service returns PXE service.
 func Service(efiDevPath string) host.Configurator {
 	return cloudless.Join(
-		cloudless.Firewall(
-			firewall.OpenV6UDPPort(dhcp6.Port),
-			firewall.OpenV6UDPPort(tftp.Port),
-		),
 		// VFAT is loaded to enable EFI partition mounting, to update the bootloader.
 		cloudless.KernelModules(kernel.Module{Name: "vfat"}),
 		cloudless.Service("pxe", parallel.Fail, func(ctx context.Context) error {

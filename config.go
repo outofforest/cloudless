@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"net"
 	"path/filepath"
-	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -116,9 +115,9 @@ func If(condition bool, configurators ...host.Configurator) host.Configurator {
 }
 
 // Configuration provides host configuration.
-func Configuration(cfg **host.Configuration) host.Configurator {
+func Configuration(cfg *host.SealedConfiguration) host.Configurator {
 	return func(c *host.Configuration) error {
-		*cfg = c
+		*cfg = c.Sealed()
 		return nil
 	}
 }
@@ -148,11 +147,7 @@ func Network(mac, ifaceName string, ips ...string) host.Configurator {
 		IPs:  make([]net.IPNet, 0, len(ips)),
 	}
 	for _, ip := range ips {
-		if strings.Contains(ip, ".") {
-			config.IPs = append(config.IPs, parse.IPNet4(ip))
-		} else {
-			config.IPs = append(config.IPs, parse.IPNet6(ip))
-		}
+		config.IPs = append(config.IPs, parse.IPNet(ip))
 	}
 
 	return func(c *host.Configuration) error {
@@ -180,21 +175,12 @@ func Bridge(ifaceName, mac string, ips ...string) host.Configurator {
 		IPs:  make([]net.IPNet, 0, len(ips)),
 	}
 	for _, ip := range ips {
-		if strings.Contains(ip, ".") {
-			config.IPs = append(config.IPs, parse.IPNet4(ip))
-		} else {
-			config.IPs = append(config.IPs, parse.IPNet6(ip))
-		}
+		config.IPs = append(config.IPs, parse.IPNet(ip))
 	}
 
 	return func(c *host.Configuration) error {
 		c.RequireKernelModules(
 			kernel.Module{Name: "bridge"},
-		)
-		c.RequireIPForwarding()
-		c.AddFirewallRules(
-			firewall.Forward(config.Name),
-			firewall.Masquerade(config.Name),
 		)
 		c.AddBridges(config)
 		return nil

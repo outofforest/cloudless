@@ -13,7 +13,6 @@ import (
 
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/cloudless/pkg/thttp"
 	"github.com/outofforest/libexec"
 	"github.com/outofforest/parallel"
@@ -24,10 +23,9 @@ const Port = 80
 
 // Service returns new yum repo service.
 func Service(repoRoot string, release uint64) host.Configurator {
-	var c *host.Configuration
+	var c host.SealedConfiguration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
-		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
 		cloudless.Service("yum", parallel.Continue, func(ctx context.Context) error {
 			packages := c.Packages()
 			if len(packages) == 0 {

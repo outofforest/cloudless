@@ -126,7 +126,7 @@ func Network(bridgeName, ifaceName, mac string) Configurator {
 
 // RunImage runs image.
 func RunImage(imageTag string, configurators ...RunImageConfigurator) host.Configurator {
-	var c *host.Configuration
+	var c host.SealedConfiguration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
 		cloudless.RequireContainers(imageTag),

@@ -39,6 +39,22 @@ func Masquerade() []expr.Any {
 	}
 }
 
+// SourceNAT changes source address of packets.
+func SourceNAT(ip net.IP) []expr.Any {
+	return []expr.Any{
+		&expr.Immediate{
+			Register: 1,
+			Data:     ip.To4(),
+		},
+		&expr.Counter{},
+		&expr.NAT{
+			Type:       expr.NATTypeSourceNAT,
+			Family:     unix.NFPROTO_IPV4,
+			RegAddrMin: 1,
+		},
+	}
+}
+
 // DestinationNAT redirects packets to IP and port.
 func DestinationNAT(ip net.IP, port uint16) []expr.Any {
 	return []expr.Any{

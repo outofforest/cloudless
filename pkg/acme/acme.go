@@ -26,7 +26,6 @@ import (
 	dnsacme "github.com/outofforest/cloudless/pkg/dns/acme"
 	"github.com/outofforest/cloudless/pkg/dns/acme/wire"
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/cloudless/pkg/thttp"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
@@ -48,31 +47,28 @@ const (
 
 // Service returns new acme client service.
 func Service(storeDir, email string, dirConfig DirectoryConfig, configurators ...Configurator) host.Configurator {
-	return cloudless.Join(
-		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
-		cloudless.Service("acme", parallel.Fail, func(ctx context.Context) error {
-			config := Config{
-				Email:       email,
-				AccountFile: filepath.Join(storeDir, dirConfig.Name, accountFile),
-				CertFile:    filepath.Join(storeDir, dirConfig.Name, certFile),
-				Directory:   dirConfig,
-			}
+	return cloudless.Service("acme", parallel.Fail, func(ctx context.Context) error {
+		config := Config{
+			Email:       email,
+			AccountFile: filepath.Join(storeDir, dirConfig.Name, accountFile),
+			CertFile:    filepath.Join(storeDir, dirConfig.Name, certFile),
+			Directory:   dirConfig,
+		}
 
-			for _, configurator := range configurators {
-				configurator(&config)
-			}
+		for _, configurator := range configurators {
+			configurator(&config)
+		}
 
-			if len(config.Domains) == 0 {
-				return errors.New("no domains defined")
-			}
-			if len(config.DNSACME) == 0 {
-				return errors.New("no dns acme endpoints defined")
-			}
+		if len(config.Domains) == 0 {
+			return errors.New("no domains defined")
+		}
+		if len(config.DNSACME) == 0 {
+			return errors.New("no dns acme endpoints defined")
+		}
 
-			a := &acme{config: config}
-			return a.Run(ctx)
-		}),
-	)
+		a := &acme{config: config}
+		return a.Run(ctx)
+	})
 }
 
 type challenge struct {

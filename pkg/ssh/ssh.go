@@ -21,25 +21,23 @@ import (
 
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/libexec"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
 )
 
 const (
-	port      = 22
+	// Port SSH server listens on.
+	Port = 22
+
 	shellPath = "/usr/bin/bash"
 )
 
 // Service returns SSH service.
 func Service(authorizedKeys ...string) host.Configurator {
-	return cloudless.Join(
-		cloudless.Firewall(firewall.OpenV4TCPPort(port)),
-		cloudless.Service("ssh", parallel.Fail, func(ctx context.Context) error {
-			return run(ctx, authorizedKeys)
-		}),
-	)
+	return cloudless.Service("ssh", parallel.Fail, func(ctx context.Context) error {
+		return run(ctx, authorizedKeys)
+	})
 }
 
 func run(ctx context.Context, authorizedKeys []string) error {
@@ -77,7 +75,7 @@ func run(ctx context.Context, authorizedKeys []string) error {
 }
 
 func runServer(ctx context.Context, signer ssh.Signer, authKeys [][]byte) error {
-	l, err := net.Listen("tcp", ":"+strconv.Itoa(port))
+	l, err := net.Listen("tcp", ":"+strconv.Itoa(Port))
 	if err != nil {
 		return errors.WithStack(err)
 	}

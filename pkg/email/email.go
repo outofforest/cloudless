@@ -20,7 +20,6 @@ import (
 	dnsdkim "github.com/outofforest/cloudless/pkg/dns/dkim"
 	"github.com/outofforest/cloudless/pkg/dns/dkim/wire"
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/parse"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
 	"github.com/outofforest/resonance"
@@ -112,16 +111,7 @@ func Service(configurators ...Configurator) host.Configurator {
 						email = middleware.Handle(email)
 
 						client, err := mail.NewClient(mxs[0].Host, mail.WithPort(25), mail.WithTLSPolicy(mail.TLSOpportunistic),
-							mail.WithHELO("mail.dev.onem.network"),
-							mail.WithDialContextFunc(func(ctx context.Context, network, address string) (net.Conn, error) {
-								addr, err := net.ResolveTCPAddr(network, address)
-								if err != nil {
-									return nil, err
-								}
-								return net.DialTCP("tcp", &net.TCPAddr{
-									IP: parse.IP4("93.179.253.133"),
-								}, addr)
-							}))
+							mail.WithHELO("mail.dev.onem.network"))
 						if err != nil {
 							log.Error("Mail error", zap.Error(err))
 							continue

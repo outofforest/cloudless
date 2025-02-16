@@ -149,6 +149,9 @@ func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
 		containerImagesRepo: c.containerImagesRepo,
 	}
 	return c2, func() {
+		if c2.remoteLoggingConfig.URL != "" {
+			c.RemoteLogging(c2.remoteLoggingConfig.URL)
+		}
 		c.RegisterMetrics(c2.metricGatherers...)
 		if c2.requireIPForwarding {
 			c.RequireIPForwarding()
@@ -176,6 +179,16 @@ func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
 		c.Prepare(c2.prepare...)
 		c.StartServices(c2.services...)
 	}
+}
+
+// SealedConfiguration exposes information collected by the configurators.
+type SealedConfiguration interface {
+	IsContainer() bool
+	MetricGatherer() prometheus.Gatherer
+	Packages() []string
+	ContainerImages() []string
+	Hostname() string
+	ContainerMirrors() []string
 }
 
 type mountConfig struct {
@@ -214,6 +227,11 @@ type Configuration struct {
 	prepare             []PrepareFn
 	services            []ServiceConfig
 	mounts              []mountConfig
+}
+
+// Sealed gives access to information collected by configurators.
+func (c *Configuration) Sealed() SealedConfiguration {
+	return c.topConfig
 }
 
 // IsContainer informs if configurator is executed in the context of container.
@@ -637,7 +655,7 @@ func configureNetwork(config InterfaceConfig, l netlink.Link) error {
 
 	var ip6Found bool
 	for _, ip := range config.IPs {
-		if ip.IP.To4() == nil {
+		if len(ip.IP) == net.IPv6len {
 			ip6Found = true
 		}
 

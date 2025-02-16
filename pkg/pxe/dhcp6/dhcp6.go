@@ -277,7 +277,11 @@ func newListener() (*net.UDPConn, map[string]*net.IPNet, error) {
 		}
 		for _, addr := range addrs {
 			ipAddr, ok := addr.(*net.IPNet)
-			if !ok || ipAddr.IP.To4() != nil || ipAddr.IP.IsLoopback() || !ipAddr.IP.IsLinkLocalUnicast() {
+			if !ok || ipAddr.IP.IsLoopback() || !ipAddr.IP.IsLinkLocalUnicast() {
+				continue
+			}
+			_, maskSize := ipAddr.Mask.Size()
+			if maskSize != 128 {
 				continue
 			}
 
