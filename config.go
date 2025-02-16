@@ -22,9 +22,6 @@ var (
 	DefaultKernelModules = []kernel.Module{
 		// Networking.
 		{Name: "virtio-net"},
-		{Name: "vhost-net"},
-		{Name: "bridge"},
-		{Name: "veth"},
 
 		// NFTables.
 		{Name: "nft-masq"},
@@ -192,7 +189,7 @@ func Bridge(ifaceName, mac string, ips ...string) host.Configurator {
 
 	return func(c *host.Configuration) error {
 		c.RequireKernelModules(
-			kernel.Module{Name: "tun"},
+			kernel.Module{Name: "bridge"},
 		)
 		c.RequireIPForwarding()
 		c.AddFirewallRules(

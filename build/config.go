@@ -33,7 +33,6 @@ var config = Config{
 			"tun",
 			"kvm-intel",
 			"virtio-net",
-			"vhost-net",
 			"virtio-scsi",
 			"bridge",
 			"veth",

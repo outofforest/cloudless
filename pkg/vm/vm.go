@@ -52,10 +52,13 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 	return cloudless.Join(
 		cloudless.CreateInitramfs(),
 		cloudless.StartVirtServices(),
-		cloudless.KernelModules(kernel.Module{
-			Name:   "kvm-intel",
-			Params: "nested=Y",
-		}),
+		cloudless.KernelModules(
+			kernel.Module{
+				Name:   "kvm-intel",
+				Params: "nested=Y",
+			},
+			kernel.Module{Name: "tun"},
+		),
 		cloudless.AllocateHugePages(memory),
 		cloudless.Prepare(func(_ context.Context) error {
 			vmUUID := uuid.New()
