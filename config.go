@@ -145,16 +145,16 @@ func Gateway(gateway string) host.Configurator {
 
 // Network defines network.
 func Network(mac, ifaceName string, ips ...string) host.Configurator {
-	n := host.NetworkConfig{
-		InterfaceName: ifaceName,
-		MAC:           parse.MAC(mac),
-		IPs:           make([]net.IPNet, 0, len(ips)),
+	config := host.InterfaceConfig{
+		Name: ifaceName,
+		MAC:  parse.MAC(mac),
+		IPs:  make([]net.IPNet, 0, len(ips)),
 	}
 	for _, ip := range ips {
 		if strings.Contains(ip, ".") {
-			n.IPs = append(n.IPs, parse.IPNet4(ip))
+			config.IPs = append(config.IPs, parse.IPNet4(ip))
 		} else {
-			n.IPs = append(n.IPs, parse.IPNet6(ip))
+			config.IPs = append(config.IPs, parse.IPNet6(ip))
 		}
 	}
 
@@ -165,13 +165,42 @@ func Network(mac, ifaceName string, ips ...string) host.Configurator {
 		}
 
 		for _, l := range links {
-			if bytes.Equal(n.MAC, l.Attrs().HardwareAddr) {
-				c.AddNetworks(n)
+			if bytes.Equal(config.MAC, l.Attrs().HardwareAddr) {
+				c.AddNetworks(config)
 				return nil
 			}
 		}
 
 		return host.ErrNotThisHost
+	}
+}
+
+// Bridge defines bridge interface.
+func Bridge(ifaceName, mac string, ips ...string) host.Configurator {
+	config := host.InterfaceConfig{
+		Name: ifaceName,
+		MAC:  parse.MAC(mac),
+		IPs:  make([]net.IPNet, 0, len(ips)),
+	}
+	for _, ip := range ips {
+		if strings.Contains(ip, ".") {
+			config.IPs = append(config.IPs, parse.IPNet4(ip))
+		} else {
+			config.IPs = append(config.IPs, parse.IPNet6(ip))
+		}
+	}
+
+	return func(c *host.Configuration) error {
+		c.RequireKernelModules(
+			kernel.Module{Name: "tun"},
+		)
+		c.RequireIPForwarding()
+		c.AddFirewallRules(
+			firewall.Forward(config.Name),
+			firewall.Masquerade(config.Name),
+		)
+		c.AddBridges(config)
+		return nil
 	}
 }
 

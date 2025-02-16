@@ -7,7 +7,6 @@ import (
 	. "github.com/outofforest/cloudless" //nolint:stylecheck
 	"github.com/outofforest/cloudless/pkg/acme"
 	"github.com/outofforest/cloudless/pkg/acpi"
-	"github.com/outofforest/cloudless/pkg/bridge"
 	"github.com/outofforest/cloudless/pkg/container"
 	containercache "github.com/outofforest/cloudless/pkg/container/cache"
 	"github.com/outofforest/cloudless/pkg/dns"
@@ -112,17 +111,19 @@ var deployment = Deployment(
 		email.Service(
 			email.DNSDKIMs("10.0.3.2", "10.0.3.3"),
 		),
-		bridge.New("brdns", "02:00:00:00:03:01", "10.0.3.1/24"),
+		Bridge("brdns", "02:00:00:00:03:01", "10.0.3.1/24"),
 		vm.New("dns01", 2, 2, vm.Network("brdns", "vdns01", "02:00:00:00:03:02")),
 		vm.New("dns02", 2, 2, vm.Network("brdns", "vdns02", "02:00:00:00:03:03")),
-		bridge.New("brmon", "02:00:00:00:04:01", "10.0.1.1/24"),
+		Bridge("brmon", "02:00:00:00:04:01", "10.0.1.1/24"),
 		vm.New("monitoring", 5, 4, vm.Network("brmon", "vmon", "02:00:00:00:04:02")),
-		bridge.New("bracme", "02:00:00:00:05:01", "10.0.2.1/24"),
+		Bridge("bracme", "02:00:00:00:05:01", "10.0.2.1/24"),
 		Mount("/dev/sda", "/root/mounts/acme", true),
 		container.New("pebble", "/tmp/containers/pebble",
-			container.Network("bracme", "vpebble", "02:00:00:00:05:02")),
+			container.Network("bracme", "vpebble", "02:00:00:00:05:02"),
+		),
 		container.New("acme", "/tmp/containers/acme",
-			container.Network("bracme", "vacme", "02:00:00:00:05:03")),
+			container.Network("bracme", "vacme", "02:00:00:00:05:03"),
+		),
 	),
 	HostDNS("dns01",
 		Gateway("10.0.3.1"),
@@ -143,7 +144,8 @@ var deployment = Deployment(
 		Mount("/root/mounts/acme", "/acme", true),
 		acme.Service("/acme", "wojtek@exw.co", acme.LetsEncryptStaging,
 			acme.DNSACMEs("10.0.3.2", "10.0.3.3"),
-			acme.Domains("dev.onem.network")),
+			acme.Domains("dev.onem.network"),
+		),
 	),
 	Host("monitoring",
 		Gateway("10.0.1.1"),
@@ -158,13 +160,16 @@ var deployment = Deployment(
 			// Loki.
 			firewall.RedirectV4TCPPort("10.0.1.2", 3002, "10.0.2.4", loki.Port),
 		),
-		bridge.New("brmon", "02:00:00:00:06:01", "10.0.2.1/24"),
+		Bridge("brmon", "02:00:00:00:06:01", "10.0.2.1/24"),
 		container.New("grafana", "/tmp/containers/grafana",
-			container.Network("brmon", "vgrafana", "02:00:00:00:06:02")),
+			container.Network("brmon", "vgrafana", "02:00:00:00:06:02"),
+		),
 		container.New("prometheus", "/tmp/containers/prometheus",
-			container.Network("brmon", "vprometheus", "02:00:00:00:06:03")),
+			container.Network("brmon", "vprometheus", "02:00:00:00:06:03"),
+		),
 		container.New("loki", "/tmp/containers/loki",
-			container.Network("brmon", "vloki", "02:00:00:00:06:04")),
+			container.Network("brmon", "vloki", "02:00:00:00:06:04"),
+		),
 	),
 	Container("grafana",
 		Gateway("10.0.2.1"),
