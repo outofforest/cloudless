@@ -11,10 +11,12 @@ import (
 type Config struct {
 	DNSPort    uint16
 	ACMEPort   uint16
+	DKIMPort   uint16
 	Zones      map[string]ZoneConfig
 	ForwardTo  []net.IP
 	ForwardFor []net.IPNet
 	EnableACME bool
+	EnableDKIM bool
 }
 
 // ZoneConfig stores dns zone configuration.
@@ -152,5 +154,12 @@ func ForwardFor(networks ...string) Configurator {
 func ACME() Configurator {
 	return func(c *Config) {
 		c.EnableACME = true
+	}
+}
+
+// DKIM enables service required to create DKIM records.
+func DKIM() Configurator {
+	return func(c *Config) {
+		c.EnableDKIM = true
 	}
 }
