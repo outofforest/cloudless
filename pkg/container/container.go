@@ -4,8 +4,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -53,8 +51,9 @@ type Config struct {
 
 // NetworkConfig represents container's network configuration.
 type NetworkConfig struct {
-	BridgeName string
-	MAC        net.HardwareAddr
+	BridgeName    string
+	InterfaceName string
+	MAC           net.HardwareAddr
 }
 
 // Configurator defines function setting the container configuration.
@@ -111,11 +110,12 @@ func New(name, containerDir string, configurators ...Configurator) host.Configur
 }
 
 // Network adds network to the config.
-func Network(bridgeName, mac string) Configurator {
+func Network(bridgeName, ifaceName, mac string) Configurator {
 	return func(c *Config) {
 		c.Networks = append(c.Networks, NetworkConfig{
-			BridgeName: bridgeName,
-			MAC:        parse.MAC(mac),
+			BridgeName:    bridgeName,
+			InterfaceName: ifaceName,
+			MAC:           parse.MAC(mac),
 		})
 	}
 }
@@ -301,15 +301,11 @@ func joinNetworks(pid int, config Config) error {
 			return errors.New("link is not a bridge")
 		}
 
-		name := vethName(config.Name, n.BridgeName)
-		hostVETHName := name + "0"
-		containerVETHName := name + "1"
-
 		vethHost := &netlink.Veth{
 			LinkAttrs: netlink.LinkAttrs{
-				Name: hostVETHName,
+				Name: n.InterfaceName,
 			},
-			PeerName:         containerVETHName,
+			PeerName:         n.InterfaceName + "1",
 			PeerHardwareAddr: n.MAC,
 		}
 
@@ -325,7 +321,7 @@ func joinNetworks(pid int, config Config) error {
 			return errors.WithStack(err)
 		}
 
-		vethContainer, err := netlink.LinkByName(containerVETHName)
+		vethContainer, err := netlink.LinkByName(vethHost.PeerName)
 		if err != nil {
 			return errors.WithStack(err)
 		}
@@ -336,15 +332,6 @@ func joinNetworks(pid int, config Config) error {
 	}
 
 	return nil
-}
-
-func vethName(container, network string) string {
-	hash := sha256.Sum256([]byte(container + "_" + network))
-	name := "cv" + hex.EncodeToString(hash[:])
-	if len(name) > 14 {
-		name = name[:14]
-	}
-	return name
 }
 
 func fetchManifest(ctx context.Context, imageTag string, mirrors []string) (cache.Manifest, error) {

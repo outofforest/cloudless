@@ -33,8 +33,9 @@ type Config struct {
 
 // NetworkConfig represents vm's network configuration.
 type NetworkConfig struct {
-	BridgeName string
-	MAC        net.HardwareAddr
+	BridgeName    string
+	InterfaceName string
+	MAC           net.HardwareAddr
 }
 
 // Configurator defines function setting the vm configuration.
@@ -97,11 +98,12 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 }
 
 // Network adds network to the config.
-func Network(bridgeName, mac string) Configurator {
+func Network(bridgeName, ifaceName, mac string) Configurator {
 	return func(vm *Config) {
 		vm.Networks = append(vm.Networks, NetworkConfig{
-			BridgeName: bridgeName,
-			MAC:        parse.MAC(mac),
+			BridgeName:    bridgeName,
+			InterfaceName: ifaceName,
+			MAC:           parse.MAC(mac),
 		})
 	}
 }
