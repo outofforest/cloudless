@@ -74,8 +74,9 @@ var (
 
 // NetworkConfig contains network configuration.
 type NetworkConfig struct {
-	MAC net.HardwareAddr
-	IPs []net.IPNet
+	InterfaceName string
+	MAC           net.HardwareAddr
+	IPs           []net.IPNet
 }
 
 // ServiceConfig contains service configuration.
@@ -589,8 +590,10 @@ func configureLoopback() error {
 }
 
 func configureNetwork(n NetworkConfig, l netlink.Link) error {
-	lName := l.Attrs().Name
-	if err := configureIPv6OnInterface(lName); err != nil {
+	if err := netlink.LinkSetName(l, n.InterfaceName); err != nil {
+		return errors.WithStack(err)
+	}
+	if err := configureIPv6OnInterface(n.InterfaceName); err != nil {
 		return err
 	}
 
@@ -611,7 +614,7 @@ func configureNetwork(n NetworkConfig, l netlink.Link) error {
 	}
 
 	if !ip6Found {
-		if err := kernel.SetSysctl(filepath.Join("net/ipv6/conf", lName, "disable_ipv6"), "1"); err != nil {
+		if err := kernel.SetSysctl(filepath.Join("net/ipv6/conf", n.InterfaceName, "disable_ipv6"), "1"); err != nil {
 			return err
 		}
 	}
