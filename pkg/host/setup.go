@@ -72,11 +72,11 @@ var (
 	cloudlessRepo []byte
 )
 
-// NetworkConfig contains network configuration.
-type NetworkConfig struct {
-	InterfaceName string
-	MAC           net.HardwareAddr
-	IPs           []net.IPNet
+// InterfaceConfig contains network interface configuration.
+type InterfaceConfig struct {
+	Name string
+	MAC  net.HardwareAddr
+	IPs  []net.IPNet
 }
 
 // ServiceConfig contains service configuration.
@@ -169,6 +169,7 @@ func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
 		c.AddYumMirrors(c2.yumMirrors...)
 		c.AddContainerMirrors(c2.containerMirrors...)
 		c.AddNetworks(c2.networks...)
+		c.AddBridges(c2.bridges...)
 		c.AddFirewallRules(c2.firewall...)
 		c.AddHugePages(c2.hugePages)
 		c.mounts = append(c.mounts, c2.mounts...)
@@ -206,7 +207,8 @@ type Configuration struct {
 	dnses               []net.IP
 	yumMirrors          []string
 	containerMirrors    []string
-	networks            []NetworkConfig
+	networks            []InterfaceConfig
+	bridges             []InterfaceConfig
 	firewall            []firewall.RuleSource
 	hugePages           uint64
 	prepare             []PrepareFn
@@ -312,8 +314,13 @@ func (c *Configuration) AddContainerMirrors(mirrors ...string) {
 }
 
 // AddNetworks configures networks.
-func (c *Configuration) AddNetworks(networks ...NetworkConfig) {
+func (c *Configuration) AddNetworks(networks ...InterfaceConfig) {
 	c.networks = append(c.networks, networks...)
+}
+
+// AddBridges configures bridges.
+func (c *Configuration) AddBridges(bridges ...InterfaceConfig) {
+	c.bridges = append(c.bridges, bridges...)
 }
 
 // AddFirewallRules add firewall rules.
@@ -463,6 +470,9 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 			if err := configureGateway(cfg.gateway); err != nil {
 				return err
 			}
+			if err := configureBridges(cfg.bridges); err != nil {
+				return err
+			}
 			if err := configureFirewall(cfg.firewall); err != nil {
 				return err
 			}
@@ -549,7 +559,7 @@ func configureDNS(dns []net.IP) error {
 	return nil
 }
 
-func configureNetworks(networks []NetworkConfig) error {
+func configureNetworks(networks []InterfaceConfig) error {
 	if err := configureLoopback(); err != nil {
 		return err
 	}
@@ -559,11 +569,11 @@ func configureNetworks(networks []NetworkConfig) error {
 		return errors.WithStack(err)
 	}
 
-	for _, n := range networks {
+	for _, config := range networks {
 		var found bool
 		for _, l := range links {
-			if bytes.Equal(n.MAC, l.Attrs().HardwareAddr) {
-				if err := configureNetwork(n, l); err != nil {
+			if bytes.Equal(config.MAC, l.Attrs().HardwareAddr) {
+				if err := configureNetwork(config, l); err != nil {
 					return err
 				}
 				found = true
@@ -571,7 +581,33 @@ func configureNetworks(networks []NetworkConfig) error {
 			}
 		}
 		if !found {
-			return errors.Errorf("link %s not found", n.MAC)
+			return errors.Errorf("link %s not found", config.MAC)
+		}
+	}
+
+	return nil
+}
+
+func configureBridges(bridges []InterfaceConfig) error {
+	for _, config := range bridges {
+		bridge := &netlink.Bridge{
+			LinkAttrs: netlink.LinkAttrs{
+				Name:         config.Name,
+				HardwareAddr: config.MAC,
+			},
+		}
+
+		if err := netlink.LinkAdd(bridge); err != nil {
+			return errors.WithStack(err)
+		}
+
+		l, err := netlink.LinkByName(config.Name)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+
+		if err := configureNetwork(config, l); err != nil {
+			return err
 		}
 	}
 
@@ -589,16 +625,18 @@ func configureLoopback() error {
 	return errors.WithStack(netlink.LinkSetUp(lo))
 }
 
-func configureNetwork(n NetworkConfig, l netlink.Link) error {
-	if err := netlink.LinkSetName(l, n.InterfaceName); err != nil {
-		return errors.WithStack(err)
+func configureNetwork(config InterfaceConfig, l netlink.Link) error {
+	if l.Attrs().Name != config.Name {
+		if err := netlink.LinkSetName(l, config.Name); err != nil {
+			return errors.WithStack(err)
+		}
 	}
-	if err := configureIPv6OnInterface(n.InterfaceName); err != nil {
+	if err := configureIPv6OnInterface(config.Name); err != nil {
 		return err
 	}
 
 	var ip6Found bool
-	for _, ip := range n.IPs {
+	for _, ip := range config.IPs {
 		if ip.IP.To4() == nil {
 			ip6Found = true
 		}
@@ -608,13 +646,13 @@ func configureNetwork(n NetworkConfig, l netlink.Link) error {
 		}); err != nil {
 			return errors.WithStack(err)
 		}
-		if err := netlink.LinkSetUp(l); err != nil {
-			return errors.WithStack(err)
-		}
+	}
+	if err := netlink.LinkSetUp(l); err != nil {
+		return errors.WithStack(err)
 	}
 
 	if !ip6Found {
-		if err := kernel.SetSysctl(filepath.Join("net/ipv6/conf", n.InterfaceName, "disable_ipv6"), "1"); err != nil {
+		if err := kernel.SetSysctl(filepath.Join("net/ipv6/conf", config.Name, "disable_ipv6"), "1"); err != nil {
 			return err
 		}
 	}
