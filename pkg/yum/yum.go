@@ -71,9 +71,16 @@ func createRepo(ctx context.Context, repoDir string, packages []string) error {
 		return errors.WithStack(err)
 	}
 
-	cmdInstall := exec.Command("dnf", "install", "-y", "--refresh", "createrepo_c")
-	cmdDownload := exec.Command("dnf",
-		append([]string{"download", "--resolve", "--alldeps"}, packages...)...)
+	cmdInstall := exec.Command("dnf", "install", "-y",
+		"--refresh",
+		"--setopt=keepcache=False",
+		"createrepo_c",
+	)
+	cmdDownload := exec.Command("dnf", append([]string{
+		"download", "--resolve", "--alldeps",
+		"--setopt=keepcache=False",
+		"--setopt=max_parallel_downloads=20",
+	}, packages...)...)
 	cmdDownload.Dir = repoDirTmp
 	cmdRepo := exec.Command("/usr/bin/createrepo", ".")
 	cmdRepo.Dir = repoDirTmp
