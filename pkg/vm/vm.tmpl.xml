@@ -93,9 +93,9 @@
             <address type="pci" domain="0x0000" bus="0x06" slot="0x00" function="0x0"/>
         </controller>
 {{ range .Networks }}
-        <interface type="network">
+        <interface type="bridge">
             <mac address="{{ .MAC }}"/>
-            <source network="{{ .Name }}"/>
+            <source bridge='{{ .BridgeName }}'/>
             <model type="virtio"/>
             <address type="pci" domain="0x0000" bus="0x07" slot="0x00" function="0x0"/>
         </interface>

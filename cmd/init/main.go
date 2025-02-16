@@ -7,7 +7,7 @@ import (
 	. "github.com/outofforest/cloudless" //nolint:stylecheck
 	"github.com/outofforest/cloudless/pkg/acme"
 	"github.com/outofforest/cloudless/pkg/acpi"
-	"github.com/outofforest/cloudless/pkg/cnet"
+	"github.com/outofforest/cloudless/pkg/bridge"
 	"github.com/outofforest/cloudless/pkg/container"
 	containercache "github.com/outofforest/cloudless/pkg/container/cache"
 	"github.com/outofforest/cloudless/pkg/dns"
@@ -24,7 +24,6 @@ import (
 	"github.com/outofforest/cloudless/pkg/pxe"
 	"github.com/outofforest/cloudless/pkg/ssh"
 	"github.com/outofforest/cloudless/pkg/vm"
-	"github.com/outofforest/cloudless/pkg/vnet"
 	"github.com/outofforest/cloudless/pkg/yum"
 )
 
@@ -78,7 +77,7 @@ var deployment = Deployment(
 	RemoteLogging("http://10.0.0.155:3002"),
 	Host("pxe",
 		Gateway("10.0.0.1"),
-		Network("00:01:0a:00:00:05", "10.0.0.100/24", "fe80::1/10"),
+		Network("02:00:00:00:01:01", "10.0.0.100/24", "fe80::1/10"),
 		Mount("/dev/sdb", "/root/mounts/repos", true),
 		pxe.Service("/dev/sda"),
 		yum.Service("/root/mounts/repos/fedora", 1),
@@ -86,8 +85,8 @@ var deployment = Deployment(
 	),
 	Host("server",
 		Gateway("93.179.253.129"),
-		Network("00:01:0a:00:00:9b", "10.0.0.155/24"),
-		Network("52:54:00:47:a8:b6", "93.179.253.130/27", "93.179.253.131/27", "93.179.253.132/27",
+		Network("02:00:00:00:02:01", "10.0.0.155/24"),
+		Network("02:00:00:00:02:02", "93.179.253.130/27", "93.179.253.131/27", "93.179.253.132/27",
 			"93.179.253.133/27"),
 		Firewall(
 			// DNS.
@@ -113,34 +112,34 @@ var deployment = Deployment(
 		email.Service(
 			email.DNSDKIMs("10.0.3.2", "10.0.3.3"),
 		),
-		vnet.NAT("dns", "52:54:00:6a:94:c0", vnet.IP4("10.0.3.1/24")),
-		vm.New("dns01", 2, 2, vm.Network("dns", "52:54:00:6a:94:c1")),
-		vm.New("dns02", 2, 2, vm.Network("dns", "52:54:00:6a:94:c2")),
-		vnet.NAT("monitoring", "52:54:00:6d:94:c0", vnet.IP4("10.0.1.1/24")),
-		vm.New("monitoring", 5, 4, vm.Network("monitoring", "00:01:0a:00:02:05")),
-		cnet.NAT("acme", cnet.IP4("10.0.2.1/24")),
+		bridge.New("brdns", "02:00:00:00:03:01", "10.0.3.1/24"),
+		vm.New("dns01", 2, 2, vm.Network("brdns", "02:00:00:00:03:02")),
+		vm.New("dns02", 2, 2, vm.Network("brdns", "02:00:00:00:03:03")),
+		bridge.New("brmon", "02:00:00:00:04:01", "10.0.1.1/24"),
+		vm.New("monitoring", 5, 4, vm.Network("brmon", "02:00:00:00:04:02")),
+		bridge.New("bracme", "02:00:00:00:05:01", "10.0.2.1/24"),
 		Mount("/dev/sda", "/root/mounts/acme", true),
-		container.New("acme", "/tmp/containers/acme",
-			container.Network("acme", "52:54:00:6e:94:c4")),
 		container.New("pebble", "/tmp/containers/pebble",
-			container.Network("acme", "52:54:00:6e:94:c3")),
+			container.Network("bracme", "02:00:00:00:05:02")),
+		container.New("acme", "/tmp/containers/acme",
+			container.Network("bracme", "02:00:00:00:05:03")),
 	),
 	HostDNS("dns01",
 		Gateway("10.0.3.1"),
-		Network("52:54:00:6a:94:c1", "10.0.3.2/24"),
+		Network("02:00:00:00:03:02", "10.0.3.2/24"),
 	),
 	HostDNS("dns02",
 		Gateway("10.0.3.1"),
-		Network("52:54:00:6a:94:c2", "10.0.3.3/24"),
+		Network("02:00:00:00:03:03", "10.0.3.3/24"),
 	),
 	Container("pebble",
 		Gateway("10.0.2.1"),
-		Network("52:54:00:6e:94:c3", "10.0.2.5/24"),
+		Network("02:00:00:00:05:02", "10.0.2.5/24"),
 		pebble.Container("/tmp/app/pebble", "10.0.3.2:53"),
 	),
 	Container("acme",
 		Gateway("10.0.2.1"),
-		Network("52:54:00:6e:94:c4", "10.0.2.6/24"),
+		Network("02:00:00:00:05:03", "10.0.2.6/24"),
 		Mount("/root/mounts/acme", "/acme", true),
 		acme.Service("/acme", "wojtek@exw.co", acme.LetsEncryptStaging,
 			acme.DNSACMEs("10.0.3.2", "10.0.3.3"),
@@ -148,7 +147,7 @@ var deployment = Deployment(
 	),
 	Host("monitoring",
 		Gateway("10.0.1.1"),
-		Network("00:01:0a:00:02:05", "10.0.1.2/24"),
+		Network("02:00:00:00:04:02", "10.0.1.2/24"),
 		Firewall(
 			// Grafana.
 			firewall.RedirectV4TCPPort("10.0.1.2", 3000, "10.0.2.2", grafana.Port),
@@ -159,17 +158,17 @@ var deployment = Deployment(
 			// Loki.
 			firewall.RedirectV4TCPPort("10.0.1.2", 3002, "10.0.2.4", loki.Port),
 		),
-		cnet.NAT("monitoring", cnet.IP4("10.0.2.1/24")),
+		bridge.New("brmon", "02:00:00:00:06:01", "10.0.2.1/24"),
 		container.New("grafana", "/tmp/containers/grafana",
-			container.Network("monitoring", "52:54:00:6e:94:c0")),
+			container.Network("brmon", "02:00:00:00:06:02")),
 		container.New("prometheus", "/tmp/containers/prometheus",
-			container.Network("monitoring", "52:54:00:6e:94:c1")),
+			container.Network("brmon", "02:00:00:00:06:03")),
 		container.New("loki", "/tmp/containers/loki",
-			container.Network("monitoring", "52:54:00:6e:94:c2")),
+			container.Network("brmon", "02:00:00:00:06:04")),
 	),
 	Container("grafana",
 		Gateway("10.0.2.1"),
-		Network("52:54:00:6e:94:c0", "10.0.2.2/24"),
+		Network("02:00:00:00:06:02", "10.0.2.2/24"),
 		grafana.Container("/tmp/app/grafana",
 			grafana.DataSource("Prometheus", grafana.DataSourcePrometheus, "http://10.0.2.3:"+strconv.Itoa(prometheus.Port)),
 			grafana.DataSource("Loki", grafana.DataSourceLoki, "http://10.0.2.4:"+strconv.Itoa(loki.Port)),
@@ -178,12 +177,12 @@ var deployment = Deployment(
 	),
 	Container("prometheus",
 		Gateway("10.0.2.1"),
-		Network("52:54:00:6e:94:c1", "10.0.2.3/24"),
+		Network("02:00:00:00:06:03", "10.0.2.3/24"),
 		prometheus.Container("/tmp/app/prometheus"),
 	),
 	Container("loki",
 		Gateway("10.0.2.1"),
-		Network("52:54:00:6e:94:c2", "10.0.2.4/24"),
+		Network("02:00:00:00:06:04", "10.0.2.4/24"),
 		loki.Container("/tmp/app/loki"),
 	),
 )

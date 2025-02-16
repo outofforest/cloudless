@@ -33,8 +33,8 @@ type Config struct {
 
 // NetworkConfig represents vm's network configuration.
 type NetworkConfig struct {
-	Name string
-	MAC  net.HardwareAddr
+	BridgeName string
+	MAC        net.HardwareAddr
 }
 
 // Configurator defines function setting the vm configuration.
@@ -57,10 +57,7 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 		}),
 		cloudless.AllocateHugePages(memory),
 		cloudless.Prepare(func(_ context.Context) error {
-			vmUUID, err := uuid.NewUUID()
-			if err != nil {
-				return errors.WithStack(err)
-			}
+			vmUUID := uuid.New()
 
 			filePath := fmt.Sprintf("/etc/libvirt/qemu/%s.xml", name)
 			f, err := os.OpenFile(filePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
@@ -100,11 +97,11 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 }
 
 // Network adds network to the config.
-func Network(name, mac string) Configurator {
+func Network(bridgeName, mac string) Configurator {
 	return func(vm *Config) {
 		vm.Networks = append(vm.Networks, NetworkConfig{
-			Name: name,
-			MAC:  parse.MAC(mac),
+			BridgeName: bridgeName,
+			MAC:        parse.MAC(mac),
 		})
 	}
 }

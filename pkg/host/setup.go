@@ -996,7 +996,8 @@ func setupVirt(c *Configuration) {
 					ctx, cancel := context.WithCancel(tcontext.Reopen(ctx))
 					ctxDaemonsCh <- cancel
 					return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
-						for _, c := range []string{"virtqemud", "virtlogd", "virtstoraged", "virtnetworkd", "virtnodedevd"} {
+						// Available services: "virtqemud", "virtlogd", "virtstoraged", "virtnetworkd", "virtnodedevd"
+						for _, c := range []string{"virtqemud", "virtlogd"} {
 							spawn(c, parallel.Fail, func(ctx context.Context) error {
 								return libexec.Exec(ctx, exec.Command(filepath.Join("/usr/sbin", c)))
 							})
