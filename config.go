@@ -10,7 +10,6 @@ import (
 	"github.com/vishvananda/netlink"
 
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/cloudless/pkg/kernel"
 	"github.com/outofforest/cloudless/pkg/parse"
 	"github.com/outofforest/parallel"
@@ -254,22 +253,6 @@ func Mount(source, target string, writable bool) host.Configurator {
 			target = filepath.Join(".", target)
 		}
 		c.AddMount(source, target, writable)
-		return nil
-	}
-}
-
-// Firewall adds firewall rules.
-func Firewall(sources ...firewall.RuleSource) host.Configurator {
-	return func(c *host.Configuration) error {
-		c.AddFirewallRules(sources...)
-		return nil
-	}
-}
-
-// EnableIPForwarding enables IP forwarding.
-func EnableIPForwarding() host.Configurator {
-	return func(c *host.Configuration) error {
-		c.RequireIPForwarding()
 		return nil
 	}
 }
