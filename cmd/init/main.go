@@ -111,6 +111,7 @@ var deployment = Deployment(
 			ingress.Endpoint(endpointGrafana,
 				ingress.Domains("dev.onem.network"),
 				ingress.Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete),
+				ingress.BodyLimit(4096),
 				ingress.EnableWebsockets(),
 				ingress.TLSBindings("93.179.253.132:443"),
 			),

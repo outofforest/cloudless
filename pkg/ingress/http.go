@@ -417,12 +417,16 @@ func (b *binding) handler() http.Handler {
 
 func (b *binding) addEndpoint(address string, id EndpointID, cfg EndpointConfig) *endpoint {
 	e := newEndpoint(address, b.Secure, id, cfg)
+	var h http.Handler = e
+	if cfg.MaxBodyLength > 0 {
+		h = http.MaxBytesHandler(h, cfg.MaxBodyLength)
+	}
 	if len(cfg.AllowedDomains) > 0 {
 		for _, domain := range cfg.AllowedDomains {
-			b.mux.Handle(domain+cfg.Path, e)
+			b.mux.Handle(domain+cfg.Path, h)
 		}
 	} else {
-		b.mux.Handle(cfg.Path, e)
+		b.mux.Handle(cfg.Path, h)
 	}
 	return e
 }

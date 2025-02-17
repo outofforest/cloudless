@@ -62,6 +62,9 @@ type EndpointConfig struct {
 	// AllowWebsockets enables websocket connections.
 	AllowWebsockets bool
 
+	// MaxBodyLength defines maximum size of request body.
+	MaxBodyLength int64
+
 	// RemoveWWWPrefix causes redirection to URL with `www.` prefix removed.
 	RemoveWWWPrefix bool
 
@@ -168,5 +171,13 @@ func TLSBindings(bindings ...string) EndpointConfigurator {
 func PlainBindings(bindings ...string) EndpointConfigurator {
 	return func(c *EndpointConfig) {
 		c.PlainBindings = append(c.PlainBindings, bindings...)
+	}
+}
+
+// BodyLimit sets the maximum allowed size of the request body in bytes.
+// Requests exceeding this limit will be rejected.
+func BodyLimit(limit int64) EndpointConfigurator {
+	return func(c *EndpointConfig) {
+		c.MaxBodyLength = limit
 	}
 }
