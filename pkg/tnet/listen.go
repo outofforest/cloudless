@@ -58,26 +58,3 @@ func ListenOnRandomPort(ctx context.Context, network Network) (net.Listener, err
 	}
 	return Listen(ctx, address)
 }
-
-// ListenOnRandomPacketPort selects a random local Packet port using and installs a listener on.
-func ListenOnRandomPacketPort() (net.PacketConn, error) {
-	addr, err := net.ResolveUDPAddr("udp", "localhost:")
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	conn, err := net.ListenUDP("udp", addr)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return conn, nil
-}
-
-// AddressOfListener returns address in form <ip>:<port> for listener.
-func AddressOfListener(l net.Listener) string {
-	return l.(*net.TCPListener).Addr().String()
-}
-
-// AddressOfPacketListener returns address in form <ip>:<port> for Packet listener.
-func AddressOfPacketListener(l net.PacketConn) string {
-	return l.LocalAddr().String()
-}
