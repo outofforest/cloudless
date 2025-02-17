@@ -19,7 +19,6 @@ import (
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/container"
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/host/firewall"
 )
 
 const (
@@ -41,7 +40,6 @@ var (
 // Container runs grafana container.
 func Container(appDir, dnsServer string) host.Configurator {
 	return cloudless.Join(
-		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
 		container.AppMount(appDir),
 		cloudless.Prepare(prepareConfig, prepareCA),
 		container.RunImage(image,

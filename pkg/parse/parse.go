@@ -14,15 +14,26 @@ func MAC(mac string) net.HardwareAddr {
 	return lo.Must(net.ParseMAC(mac))
 }
 
+// IP parses IP address.
+func IP(ip string) net.IP {
+	if strings.Contains(ip, ".") {
+		return IP4(ip)
+	}
+	return IP6(ip)
+}
+
 // IP4 parses IPv4 address.
 func IP4(ip string) net.IP {
+	if !strings.Contains(ip, ".") {
+		panic(errors.New("not an IP4 address"))
+	}
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
 		panic(errors.New("invalid IP address"))
 	}
 	parsedIP = parsedIP.To4()
 	if parsedIP == nil {
-		panic(errors.New("not an IPNet4 address"))
+		panic(errors.New("not an IP4 address"))
 	}
 
 	return parsedIP
@@ -36,6 +47,14 @@ func IP6(ip string) net.IP {
 	}
 
 	return parsedIP
+}
+
+// IPNet parses IP address and prefix.
+func IPNet(ip string) net.IPNet {
+	if strings.Contains(ip, ".") {
+		return IPNet4(ip)
+	}
+	return IPNet6(ip)
 }
 
 // IPNet4 parses IPv4 address and prefix.

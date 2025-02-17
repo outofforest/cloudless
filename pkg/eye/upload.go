@@ -28,7 +28,7 @@ const (
 
 // UploadService returns new prometheus metric uploader service.
 func UploadService(prometheusURL string) host.Configurator {
-	var c *host.Configuration
+	var c host.SealedConfiguration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
 		cloudless.Service("eye", parallel.Fail, func(ctx context.Context) error {

@@ -22,7 +22,6 @@ import (
 
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/cloudless/pkg/retry"
 	"github.com/outofforest/cloudless/pkg/thttp"
 	"github.com/outofforest/logger"
@@ -51,10 +50,9 @@ var (
 
 // Service returns new yum repo service.
 func Service(repoRoot string, release uint64) host.Configurator {
-	var c *host.Configuration
+	var c host.SealedConfiguration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
-		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
 		cloudless.Service("containercache", parallel.Continue, func(ctx context.Context) error {
 			images := c.ContainerImages()
 			if len(images) == 0 {

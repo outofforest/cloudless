@@ -58,6 +58,7 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 				Params: "nested=Y",
 			},
 			kernel.Module{Name: "tun"},
+			kernel.Module{Name: "vhost-net"},
 		),
 		cloudless.AllocateHugePages(memory),
 		cloudless.Prepare(func(_ context.Context) error {

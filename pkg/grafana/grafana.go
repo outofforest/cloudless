@@ -15,7 +15,6 @@ import (
 	"github.com/outofforest/cloudless/pkg/container"
 	"github.com/outofforest/cloudless/pkg/grafana/types"
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/host/firewall"
 )
 
 const (
@@ -68,7 +67,6 @@ func Container(appDir string, configurators ...Configurator) host.Configurator {
 	}
 
 	return cloudless.Join(
-		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
 		container.AppMount(appDir),
 		cloudless.Prepare(func(_ context.Context) error {
 			dataSourcesDir := filepath.Join(container.AppDir, "provisioning", "datasources")

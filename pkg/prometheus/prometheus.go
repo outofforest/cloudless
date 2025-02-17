@@ -12,7 +12,6 @@ import (
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/container"
 	"github.com/outofforest/cloudless/pkg/host"
-	"github.com/outofforest/cloudless/pkg/host/firewall"
 )
 
 const (
@@ -28,7 +27,6 @@ var config []byte
 // Container runs prometheus container.
 func Container(appDir string) host.Configurator {
 	return cloudless.Join(
-		cloudless.Firewall(firewall.OpenV4TCPPort(Port)),
 		container.AppMount(appDir),
 		cloudless.Prepare(func(_ context.Context) error {
 			return errors.WithStack(os.WriteFile(filepath.Join(container.AppDir, "config.yaml"), config, 0o600))
