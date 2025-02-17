@@ -124,6 +124,7 @@ func Expose(proto string,
 	externalIPParsed := parse.IP4(externalIP)
 	internalIPParsed := parse.IP4(internalIP)
 	return func(c *host.Configuration) error {
+		c.RequireIPForwarding()
 		c.AddFirewallRules(func(chains firewall.Chains) ([]*nftables.Rule, error) {
 			return []*nftables.Rule{
 				{
