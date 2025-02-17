@@ -168,6 +168,7 @@ func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
 		if c2.gateway != nil {
 			c.SetGateway(c2.gateway)
 		}
+		c.AddRoutes(c2.routes...)
 		c.AddDNSes(c2.dnses...)
 		c.AddYumMirrors(c2.yumMirrors...)
 		c.AddContainerMirrors(c2.containerMirrors...)
@@ -201,6 +202,12 @@ type logLabels struct {
 	Box string `json:"box"`
 }
 
+// Route defines static route.
+type Route struct {
+	Destination net.IPNet
+	Gateway     net.IP
+}
+
 // Configuration allows service to configure the required host settings.
 type Configuration struct {
 	isContainer         bool
@@ -217,6 +224,7 @@ type Configuration struct {
 	packages            []string
 	hostname            string
 	gateway             net.IP
+	routes              []Route
 	dnses               []net.IP
 	yumMirrors          []string
 	containerMirrors    []string
@@ -309,6 +317,11 @@ func (c *Configuration) SetHostname(hostname string) {
 // SetGateway sets gateway.
 func (c *Configuration) SetGateway(gateway net.IP) {
 	c.gateway = gateway
+}
+
+// AddRoutes adds static routes.
+func (c *Configuration) AddRoutes(routes ...Route) {
+	c.routes = append(c.routes, routes...)
 }
 
 // AddDNSes adds DNS servers.
@@ -485,13 +498,16 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 			if err := configureNetworks(cfg.networks); err != nil {
 				return err
 			}
-			if err := configureGateway(cfg.gateway); err != nil {
-				return err
-			}
 			if err := configureBridges(cfg.bridges); err != nil {
 				return err
 			}
 			if err := configureFirewall(cfg.firewall); err != nil {
+				return err
+			}
+			if err := configureGateway(cfg.gateway); err != nil {
+				return err
+			}
+			if err := configureRoutes(cfg.routes); err != nil {
 				return err
 			}
 
@@ -704,6 +720,20 @@ func configureGateway(gateway net.IP) error {
 	}
 
 	return errors.Errorf("no link found for gateway %q", gateway)
+}
+
+func configureRoutes(routes []Route) error {
+	for _, r := range routes {
+		if err := netlink.RouteAdd(&netlink.Route{
+			Scope: netlink.SCOPE_UNIVERSE,
+			Dst:   &r.Destination,
+			Gw:    r.Gateway,
+		}); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+
+	return nil
 }
 
 func configureIPv6OnInterface(lName string) error {
