@@ -132,9 +132,22 @@ func RemoteLogging(lokiURL string) host.Configurator {
 
 // Gateway defines gateway.
 func Gateway(gateway string) host.Configurator {
-	ip := parse.IP4(gateway)
+	ip := parse.IP(gateway)
 	return func(c *host.Configuration) error {
 		c.SetGateway(ip)
+		return nil
+	}
+}
+
+// Route defines static route.
+func Route(destination, gateway string) host.Configurator {
+	destinationParsed := parse.IPNet(destination)
+	gatewayParsed := parse.IP(gateway)
+	return func(c *host.Configuration) error {
+		c.AddRoutes(host.Route{
+			Destination: destinationParsed,
+			Gateway:     gatewayParsed,
+		})
 		return nil
 	}
 }
