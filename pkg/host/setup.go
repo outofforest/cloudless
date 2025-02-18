@@ -74,9 +74,10 @@ var (
 
 // InterfaceConfig contains network interface configuration.
 type InterfaceConfig struct {
-	Name string
-	MAC  net.HardwareAddr
-	IPs  []net.IPNet
+	Name       string
+	MasterName string
+	MAC        net.HardwareAddr
+	IPs        []net.IPNet
 }
 
 // ServiceConfig contains service configuration.
@@ -510,6 +511,9 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 			if err := configureRoutes(cfg.routes); err != nil {
 				return err
 			}
+			if err := configureMasters(cfg.networks, cfg.bridges); err != nil {
+				return err
+			}
 
 			//nolint:nestif
 			if !cfg.isContainer {
@@ -642,6 +646,29 @@ func configureBridges(bridges []InterfaceConfig) error {
 
 		if err := configureNetwork(config, l); err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+func configureMasters(networks, bridges []InterfaceConfig) error {
+	for _, config := range append(append([]InterfaceConfig{}, networks...), bridges...) {
+		if config.MasterName == "" {
+			continue
+		}
+		masterLink, err := netlink.LinkByName(config.MasterName)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+
+		slaveLink, err := netlink.LinkByName(config.Name)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+
+		if err := netlink.LinkSetMaster(slaveLink, masterLink); err != nil {
+			return errors.WithStack(err)
 		}
 	}
 
