@@ -151,15 +151,18 @@ func Route(destination, gateway string) host.Configurator {
 	}
 }
 
+// InterfaceConfigurator is a type alias for functions that configure a specific network interface.
+type InterfaceConfigurator func(c *host.InterfaceConfig)
+
 // Network defines network.
-func Network(mac, ifaceName string, ips ...string) host.Configurator {
+func Network(mac, ifaceName string, configurators ...InterfaceConfigurator) host.Configurator {
 	config := host.InterfaceConfig{
 		Name: ifaceName,
 		MAC:  parse.MAC(mac),
-		IPs:  make([]net.IPNet, 0, len(ips)),
 	}
-	for _, ip := range ips {
-		config.IPs = append(config.IPs, parse.IPNet(ip))
+
+	for _, configurator := range configurators {
+		configurator(&config)
 	}
 
 	return func(c *host.Configuration) error {
@@ -180,14 +183,14 @@ func Network(mac, ifaceName string, ips ...string) host.Configurator {
 }
 
 // Bridge defines bridge interface.
-func Bridge(ifaceName, mac string, ips ...string) host.Configurator {
+func Bridge(ifaceName, mac string, configurators ...InterfaceConfigurator) host.Configurator {
 	config := host.InterfaceConfig{
 		Name: ifaceName,
 		MAC:  parse.MAC(mac),
-		IPs:  make([]net.IPNet, 0, len(ips)),
 	}
-	for _, ip := range ips {
-		config.IPs = append(config.IPs, parse.IPNet(ip))
+
+	for _, configurator := range configurators {
+		configurator(&config)
 	}
 
 	return func(c *host.Configuration) error {
@@ -196,6 +199,22 @@ func Bridge(ifaceName, mac string, ips ...string) host.Configurator {
 		)
 		c.AddBridges(config)
 		return nil
+	}
+}
+
+// IPs configures the IP addresses for a network interface.
+func IPs(ips ...string) InterfaceConfigurator {
+	return func(c *host.InterfaceConfig) {
+		for _, ip := range ips {
+			c.IPs = append(c.IPs, parse.IPNet(ip))
+		}
+	}
+}
+
+// Master sets the master interface name for a network interface.
+func Master(bridge string) InterfaceConfigurator {
+	return func(c *host.InterfaceConfig) {
+		c.MasterName = bridge
 	}
 }
 
