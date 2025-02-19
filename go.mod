@@ -25,7 +25,7 @@ require (
 	github.com/outofforest/run v0.8.0
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.7
-	github.com/prometheus/client_golang v1.20.5
+	github.com/prometheus/client_golang v1.21.0
 	github.com/prometheus/common v0.62.0
 	github.com/prometheus/prometheus v0.301.0
 	github.com/ridge/must v0.6.0
