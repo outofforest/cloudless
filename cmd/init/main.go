@@ -27,6 +27,7 @@ import (
 	pxetftp "github.com/outofforest/cloudless/pkg/pxe/tftp"
 	"github.com/outofforest/cloudless/pkg/shield"
 	"github.com/outofforest/cloudless/pkg/ssh"
+	"github.com/outofforest/cloudless/pkg/vlan"
 	"github.com/outofforest/cloudless/pkg/vm"
 	"github.com/outofforest/cloudless/pkg/yum"
 )
@@ -105,6 +106,7 @@ var deployment = Deployment(
 		),
 		Network("02:00:00:00:02:01", "iint", IPs("10.0.0.155/24")),
 		Network("02:00:00:00:02:02", "ipub", Master("igw")),
+		vlan.New("vlan100", "igw", vlan.IPs("10.100.0.155/24")),
 		Route("10.0.4.0/24", "10.0.1.2"),
 		shield.Forward("iint", "brmon"),
 
