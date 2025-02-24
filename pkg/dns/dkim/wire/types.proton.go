@@ -9,10 +9,8 @@ import (
 )
 
 const (
-	// IDMsgRequest is the ID of MsgRequest message.
-	IDMsgRequest uint64 = iota + 1
-	// IDMsgAck is the ID of MsgAck message.
-	IDMsgAck
+	id1 uint64 = iota + 1
+	id0
 )
 
 var _ proton.Marshaller = Marshaller{}
@@ -20,19 +18,31 @@ var _ proton.Marshaller = Marshaller{}
 // NewMarshaller creates marshaller.
 func NewMarshaller(capacity uint64) Marshaller {
 	return Marshaller{
-		massMsgAck:     mass.New[MsgAck](capacity),
-		massMsgRequest: mass.New[MsgRequest](capacity),
+		mass0: mass.New[MsgAck](capacity),
+		mass1: mass.New[MsgRequest](capacity),
 	}
 }
 
 // Marshaller marshals and unmarshals messages.
 type Marshaller struct {
-	massMsgAck     *mass.Mass[MsgAck]
-	massMsgRequest *mass.Mass[MsgRequest]
+	mass0 *mass.Mass[MsgAck]
+	mass1 *mass.Mass[MsgRequest]
+}
+
+// Size computes the size of marshalled message.
+func (m Marshaller) Size(msg any) (uint64, error) {
+	switch msg2 := msg.(type) {
+	case *MsgAck:
+		return size0(msg2), nil
+	case *MsgRequest:
+		return size1(msg2), nil
+	default:
+		return 0, errors.Errorf("unknown message type %T", msg)
+	}
 }
 
 // Marshal marshals message.
-func (m Marshaller) Marshal(msg proton.Marshallable, buf []byte) (retID, retSize uint64, retErr error) {
+func (m Marshaller) Marshal(msg any, buf []byte) (retID, retSize uint64, retErr error) {
 	defer func() {
 		if res := recover(); res != nil {
 			retErr = errors.Errorf("marshaling message failed: %s", res)
@@ -41,11 +51,11 @@ func (m Marshaller) Marshal(msg proton.Marshallable, buf []byte) (retID, retSize
 
 	switch msg2 := msg.(type) {
 	case *MsgAck:
-		return IDMsgAck, msg2.Marshal(buf), nil
+		return id0, marshal0(msg2, buf), nil
 	case *MsgRequest:
-		return IDMsgRequest, msg2.Marshal(buf), nil
+		return id1, marshal1(msg2, buf), nil
 	default:
-		return 0, 0, errors.Errorf("unknown message type %T", m)
+		return 0, 0, errors.Errorf("unknown message type %T", msg)
 	}
 }
 
@@ -58,14 +68,16 @@ func (m Marshaller) Unmarshal(id uint64, buf []byte) (retMsg any, retSize uint64
 	}()
 
 	switch id {
-	case IDMsgAck:
-		msg := m.massMsgAck.New()
-		return msg, msg.Unmarshal(
+	case id0:
+		msg := m.mass0.New()
+		return msg, unmarshal0(
+			msg,
 			buf,
 		), nil
-	case IDMsgRequest:
-		msg := m.massMsgRequest.New()
-		return msg, msg.Unmarshal(
+	case id1:
+		msg := m.mass1.New()
+		return msg, unmarshal1(
+			msg,
 			buf,
 		), nil
 	default:
@@ -73,23 +85,19 @@ func (m Marshaller) Unmarshal(id uint64, buf []byte) (retMsg any, retSize uint64
 	}
 }
 
-var _ proton.Message = &MsgAck{}
-
-// Size computes the required size of the buffer for marshaling the structure.
-func (m *MsgAck) Size() uint64 {
+func size0(m *MsgAck) uint64 {
 	var n uint64
 	return n
 }
 
-// Marshal marshals the structure.
-func (m *MsgAck) Marshal(b []byte) uint64 {
+func marshal0(m *MsgAck, b []byte) uint64 {
 	var o uint64
 
 	return o
 }
 
-// Unmarshal unmarshals the structure.
-func (m *MsgAck) Unmarshal(
+func unmarshal0(
+	m *MsgAck,
 	b []byte,
 ) uint64 {
 	var o uint64
@@ -97,10 +105,7 @@ func (m *MsgAck) Unmarshal(
 	return o
 }
 
-var _ proton.Message = &MsgRequest{}
-
-// Size computes the required size of the buffer for marshaling the structure.
-func (m *MsgRequest) Size() uint64 {
+func size1(m *MsgRequest) uint64 {
 	var n uint64 = 2
 	{
 		// Provider
@@ -163,8 +168,7 @@ func (m *MsgRequest) Size() uint64 {
 	return n
 }
 
-// Marshal marshals the structure.
-func (m *MsgRequest) Marshal(b []byte) uint64 {
+func marshal1(m *MsgRequest, b []byte) uint64 {
 	var o uint64
 	{
 		// Provider
@@ -468,8 +472,8 @@ func (m *MsgRequest) Marshal(b []byte) uint64 {
 	return o
 }
 
-// Unmarshal unmarshals the structure.
-func (m *MsgRequest) Unmarshal(
+func unmarshal1(
+	m *MsgRequest,
 	b []byte,
 ) uint64 {
 	var o uint64
