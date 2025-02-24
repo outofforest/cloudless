@@ -80,6 +80,14 @@ type InterfaceConfig struct {
 	IPs        []net.IPNet
 }
 
+// VLANConfig contains vlan interface configuration.
+type VLANConfig struct {
+	Name       string
+	ParentName string
+	VLANID     int
+	IPs        []net.IPNet
+}
+
 // ServiceConfig contains service configuration.
 type ServiceConfig struct {
 	Name   string
@@ -175,6 +183,7 @@ func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
 		c.AddContainerMirrors(c2.containerMirrors...)
 		c.AddNetworks(c2.networks...)
 		c.AddBridges(c2.bridges...)
+		c.AddVLANs(c2.vlans...)
 		c.AddFirewallRules(c2.firewall...)
 		c.AddHugePages(c2.hugePages)
 		c.mounts = append(c.mounts, c2.mounts...)
@@ -231,6 +240,7 @@ type Configuration struct {
 	containerMirrors    []string
 	networks            []InterfaceConfig
 	bridges             []InterfaceConfig
+	vlans               []VLANConfig
 	firewall            []firewall.RuleSource
 	hugePages           uint64
 	prepare             []PrepareFn
@@ -353,6 +363,11 @@ func (c *Configuration) AddNetworks(networks ...InterfaceConfig) {
 // AddBridges configures bridges.
 func (c *Configuration) AddBridges(bridges ...InterfaceConfig) {
 	c.bridges = append(c.bridges, bridges...)
+}
+
+// AddVLANs configures vlans.
+func (c *Configuration) AddVLANs(vlans ...VLANConfig) {
+	c.vlans = append(c.vlans, vlans...)
 }
 
 // AddFirewallRules add firewall rules.
@@ -502,6 +517,9 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 			if err := configureBridges(cfg.bridges); err != nil {
 				return err
 			}
+			if err := configureVLANs(cfg.vlans); err != nil {
+				return err
+			}
 			if err := configureFirewall(cfg.firewall); err != nil {
 				return err
 			}
@@ -611,7 +629,7 @@ func configureNetworks(networks []InterfaceConfig) error {
 		var found bool
 		for _, l := range links {
 			if bytes.Equal(config.MAC, l.Attrs().HardwareAddr) {
-				if err := configureNetwork(config, l); err != nil {
+				if err := configureNetwork(l, config.Name, config.IPs); err != nil {
 					return err
 				}
 				found = true
@@ -644,7 +662,40 @@ func configureBridges(bridges []InterfaceConfig) error {
 			return errors.WithStack(err)
 		}
 
-		if err := configureNetwork(config, l); err != nil {
+		if err := configureNetwork(l, config.Name, config.IPs); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func configureVLANs(vlans []VLANConfig) error {
+	for _, config := range vlans {
+		parent, err := netlink.LinkByName(config.ParentName)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+
+		vlan := &netlink.Vlan{
+			LinkAttrs: netlink.LinkAttrs{
+				Name:        config.Name,
+				ParentIndex: parent.Attrs().Index,
+			},
+			VlanId:       config.VLANID,
+			VlanProtocol: netlink.VLAN_PROTOCOL_8021Q,
+		}
+
+		if err := netlink.LinkAdd(vlan); err != nil {
+			return errors.WithStack(err)
+		}
+
+		l, err := netlink.LinkByName(config.Name)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+
+		if err := configureNetwork(l, config.Name, config.IPs); err != nil {
 			return err
 		}
 	}
@@ -686,18 +737,18 @@ func configureLoopback() error {
 	return errors.WithStack(netlink.LinkSetUp(lo))
 }
 
-func configureNetwork(config InterfaceConfig, l netlink.Link) error {
-	if l.Attrs().Name != config.Name {
-		if err := netlink.LinkSetName(l, config.Name); err != nil {
+func configureNetwork(l netlink.Link, name string, ips []net.IPNet) error {
+	if l.Attrs().Name != name {
+		if err := netlink.LinkSetName(l, name); err != nil {
 			return errors.WithStack(err)
 		}
 	}
-	if err := configureIPv6OnInterface(config.Name); err != nil {
+	if err := configureIPv6OnInterface(name); err != nil {
 		return err
 	}
 
 	var ip6Found bool
-	for _, ip := range config.IPs {
+	for _, ip := range ips {
 		if len(ip.IP) == net.IPv6len {
 			ip6Found = true
 		}
@@ -713,7 +764,7 @@ func configureNetwork(config InterfaceConfig, l netlink.Link) error {
 	}
 
 	if !ip6Found {
-		if err := kernel.SetSysctl(filepath.Join("net/ipv6/conf", config.Name, "disable_ipv6"), "1"); err != nil {
+		if err := kernel.SetSysctl(filepath.Join("net/ipv6/conf", name, "disable_ipv6"), "1"); err != nil {
 			return err
 		}
 	}

@@ -36,6 +36,7 @@ var config = Config{
 			"virtio-scsi",
 			"bridge",
 			"veth",
+			"8021q",
 			"vhost-net",
 			"nft-masq",
 			"nft-nat",
