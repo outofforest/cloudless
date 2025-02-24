@@ -20,6 +20,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/loki"
 	"github.com/outofforest/cloudless/pkg/ntp"
 	"github.com/outofforest/cloudless/pkg/pebble"
+	"github.com/outofforest/cloudless/pkg/profile"
 	"github.com/outofforest/cloudless/pkg/prometheus"
 	"github.com/outofforest/cloudless/pkg/pxe"
 	pxedhcp6 "github.com/outofforest/cloudless/pkg/pxe/dhcp6"
@@ -106,6 +107,10 @@ var deployment = Deployment(
 		Network("02:00:00:00:02:02", "ipub", Master("igw")),
 		Route("10.0.4.0/24", "10.0.1.2"),
 		shield.Forward("iint", "brmon"),
+
+		// Profiler.
+		shield.Open("tcp4", "iint", profile.Port),
+		profile.Service(),
 
 		// DNS.
 		Bridge("brdns", "02:00:00:00:03:01", IPs("10.0.3.1/24")),
