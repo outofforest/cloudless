@@ -20,7 +20,7 @@ require (
 	github.com/outofforest/logger v0.6.0
 	github.com/outofforest/mass v0.2.1
 	github.com/outofforest/parallel v0.2.3
-	github.com/outofforest/proton v0.8.1
+	github.com/outofforest/proton v0.10.3
 	github.com/outofforest/resonance v0.8.0
 	github.com/outofforest/run v0.8.0
 	github.com/pkg/errors v0.9.1
@@ -101,10 +101,10 @@ require (
 	go.opentelemetry.io/otel/trace v1.34.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/mod v0.23.0 // indirect
+	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/oauth2 v0.26.0 // indirect
-	golang.org/x/sync v0.11.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/time v0.10.0 // indirect
 	golang.org/x/tools v0.30.0 // indirect
 	google.golang.org/api v0.222.0 // indirect
