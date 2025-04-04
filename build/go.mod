@@ -2,12 +2,14 @@ module build
 
 go 1.22.0
 
+toolchain go1.24.1
+
 require (
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/diskfs/go-diskfs v1.5.0
 	github.com/outofforest/build/v2 v2.4.0
 	github.com/outofforest/logger v0.6.0
-	github.com/outofforest/tools v1.2.0
+	github.com/outofforest/tools v1.3.0
 	github.com/pkg/errors v0.9.1
 	github.com/samber/lo v1.49.1
 	github.com/sassoftware/go-rpmutils v0.4.0
