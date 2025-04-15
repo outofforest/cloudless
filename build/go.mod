@@ -4,7 +4,7 @@ go 1.22.0
 
 require (
 	github.com/cavaliergopher/cpio v1.0.1
-	github.com/diskfs/go-diskfs v1.5.0
+	github.com/diskfs/go-diskfs v1.6.0
 	github.com/outofforest/build/v2 v2.4.0
 	github.com/outofforest/logger v0.6.0
 	github.com/outofforest/tools v1.2.0
