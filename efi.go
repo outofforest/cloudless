@@ -1,4 +1,4 @@
-package build
+package cloudless
 
 import (
 	"compress/gzip"
@@ -12,17 +12,14 @@ import (
 	"github.com/diskfs/go-diskfs/filesystem/fat32"
 	"github.com/pkg/errors"
 
+	"github.com/outofforest/archive"
 	"github.com/outofforest/build/v2/pkg/types"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/tools/pkg/tools/zig"
 )
 
-const (
-	embedDir = "bin/embed"
-)
-
-// Loader builds UEFI loader for application.
-func Loader(ctx context.Context, deps types.DepsFunc, config Config) error {
+// BuildEFI builds EFI loader.
+func BuildEFI(ctx context.Context, deps types.DepsFunc, config Config) error {
 	deps(zig.EnsureZig)
 
 	distroDir, err := buildDistro(ctx, config.Distro)
@@ -32,9 +29,35 @@ func Loader(ctx context.Context, deps types.DepsFunc, config Config) error {
 
 	logger.Get(ctx).Info("Building loader")
 
-	if err := os.RemoveAll(embedDir); err != nil {
+	efiSrcFile := filepath.Join(distroDir, efiFile)
+	efiF, err := os.Open(efiSrcFile)
+	if err != nil {
 		return errors.WithStack(err)
 	}
+	defer efiF.Close()
+
+	efiDir, err := os.MkdirTemp("", "efi")
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer os.RemoveAll(efiDir) //nolint:errcheck
+
+	efiUnpackDir := filepath.Join(efiDir, "build")
+	if err := archive.Inflate(efiSrcFile, efiF, efiUnpackDir); err != nil {
+		return err
+	}
+
+	dirs, err := os.ReadDir(efiUnpackDir)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if len(dirs) != 1 || !dirs[0].IsDir() {
+		return errors.New("expected exactly one subdirectory in EFI release")
+	}
+
+	efiPkgDir := filepath.Join(efiUnpackDir, dirs[0].Name())
+
+	embedDir := filepath.Join(efiPkgDir, "src", "embed")
 	if err := os.MkdirAll(embedDir, 0o700); err != nil {
 		return errors.WithStack(err)
 	}
@@ -48,25 +71,29 @@ func Loader(ctx context.Context, deps types.DepsFunc, config Config) error {
 		return errors.WithStack(err)
 	}
 
+	efiOutDir := filepath.Join(efiDir, "out")
 	if err := zig.Build(ctx, deps, zig.BuildConfig{
-		PackagePath: "loader",
-		OutputPath:  "bin",
+		PackagePath: efiPkgDir,
+		OutputPath:  efiOutDir,
 	}); err != nil {
 		return err
 	}
 
-	inF, err := os.Open("bin/bootx64.efi")
+	inF, err := os.Open(filepath.Join(efiOutDir, "bootx64.efi"))
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	defer inF.Close()
 
-	if err := os.Remove("bin/efi.img"); err != nil && !os.IsNotExist(err) {
+	if err := os.MkdirAll(filepath.Base(config.EFIPath), 0o700); err != nil {
+		return errors.WithStack(err)
+	}
+	if err := os.Remove(config.EFIPath); err != nil && !os.IsNotExist(err) {
 		return errors.WithStack(err)
 	}
 
 	const size = 200 * 1024 * 1024
-	b, err := file.CreateFromPath("bin/efi.img", size)
+	b, err := file.CreateFromPath(config.EFIPath, size)
 	if err != nil {
 		return errors.WithStack(err)
 	}
