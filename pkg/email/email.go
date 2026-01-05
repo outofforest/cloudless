@@ -126,24 +126,23 @@ func Service(configurators ...Configurator) host.Configurator {
 					}
 				})
 
+				m := wire.NewMarshaller()
 				for _, dnsDKIM := range config.DNSDKIM {
 					spawn("dnsDKIM", parallel.Fail, func(ctx context.Context) error {
 						log := logger.Get(ctx)
 
 						for {
-							err := resonance.RunClient[wire.Marshaller](ctx, dnsDKIM, dnsdkim.WireConfig,
-								func(ctx context.Context, recvCh <-chan any, c *resonance.Connection[wire.Marshaller]) error {
-									c.Send(&wire.MsgRequest{
+							err := resonance.RunClient(ctx, dnsDKIM, dnsdkim.WireConfig,
+								func(ctx context.Context, c *resonance.Connection) error {
+									if err := c.SendProton(&wire.MsgRequest{
 										Provider:  "cloudless",
 										PublicKey: pubKey,
-									})
+									}, m); err != nil {
+										return err
+									}
 
-									select {
-									case <-ctx.Done():
-										return errors.WithStack(err)
-									case <-time.After(time.Second):
-										return errors.New("timeout when waiting for ACK")
-									case <-recvCh:
+									if _, err := c.ReceiveProton(m); err != nil {
+										return err
 									}
 
 									<-ctx.Done()

@@ -183,6 +183,7 @@ func (a *acme) runIssuer(ctx context.Context) error {
 
 	log.Info("Certificate expiration time", zap.Time("expirationTime", expirationTime))
 
+	m := wire.NewMarshaller()
 	for {
 		select {
 		case <-ctx.Done():
@@ -199,8 +200,8 @@ func (a *acme) runIssuer(ctx context.Context) error {
 
 			for _, dnsACMEAddr := range a.config.DNSACME {
 				spawn("dnsacme", parallel.Continue, func(ctx context.Context) error {
-					err := resonance.RunClient[wire.Marshaller](ctx, dnsACMEAddr, dnsacme.WireConfig,
-						func(ctx context.Context, recvCh <-chan any, c *resonance.Connection[wire.Marshaller]) error {
+					err := resonance.RunClient(ctx, dnsACMEAddr, dnsacme.WireConfig,
+						func(ctx context.Context, c *resonance.Connection) error {
 							startCh <- struct{}{}
 							var req *wire.MsgRequest
 
@@ -210,11 +211,13 @@ func (a *acme) runIssuer(ctx context.Context) error {
 							case req = <-reqCh:
 							}
 
-							c.Send(req)
+							if err := c.SendProton(req, m); err != nil {
+								return err
+							}
 
-							msg, ok := <-recvCh
-							if !ok {
-								return errors.WithStack(ctx.Err())
+							msg, err := c.ReceiveProton(m)
+							if err != nil {
+								return err
 							}
 							if _, ok := msg.(*wire.MsgAck); !ok {
 								return errors.New("unexpected response")

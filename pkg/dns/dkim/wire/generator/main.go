@@ -9,7 +9,7 @@ import (
 
 func main() {
 	proton.Generate("../types.proton.go",
-		wire.MsgRequest{},
-		wire.MsgAck{},
+		proton.Message(wire.MsgRequest{}),
+		proton.Message(wire.MsgAck{}),
 	)
 }
