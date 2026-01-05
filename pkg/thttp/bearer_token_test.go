@@ -20,5 +20,5 @@ func TestParseBearerTokenMissing(t *testing.T) {
 
 func TestParseBearerTokenMalformed(t *testing.T) {
 	_, err := BearerToken(http.Header{"Authorization": []string{"Bear TOKEN"}})
-	require.IsType(t, MalformedAuthHeaderError{}, err)
+	require.ErrorIs(t, err, MalformedAuthHeaderError{header: "Bear TOKEN"})
 }

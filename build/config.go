@@ -1,31 +1,31 @@
 package build
 
-const version = "6.13.1-200.fc41.x86_64"
+const version = "6.17.12-300.fc43.x86_64"
 
 var config = Config{
 	InitBinPath: initBinPath,
 	Distro: DistroConfig{
 		Base: Base{
-			URL:    "https://github.com/fedora-cloud/docker-brew-fedora/raw/54e85723288471bb9dc81bc5cfed807635f93818/x86_64/fedora-20250119.tar", //nolint:lll
-			SHA256: "3b8a25c27f4773557aee851f75beba17d910c968671c2771a105ce7c7a40e3ec",
+			URL:    "https://github.com/fedora-cloud/docker-brew-fedora/raw/refs/heads/43/x86_64/fedora-20260104.tar", //nolint:lll
+			SHA256: "12cee601b760e21f3a8aacfb11dbe926255a414ef3cc4b66682df74413c1bab1",
 		},
 
 		// https://packages.fedoraproject.org
 		KernelPackage: Package{
 			Name:    "kernel-core",
 			Version: version,
-			SHA256:  "1ae495e4fafc9efc2ecb4f13a73c87db12c75121b2aab07408c8e0ad69de9c4d",
+			SHA256:  "a37e6912e51108c8983ea1f0f23f4e1cbf07380d73f22ea1d3099ce431438062",
 		},
 		KernelModulePackages: []Package{
 			{
 				Name:    "kernel-modules-core",
 				Version: version,
-				SHA256:  "87f687a9b3299c910b350f3c77fa0b5883e15d96b9a2049d5382a5b7c2b2d390",
+				SHA256:  "51a340f9fd9d537c4a7ee9174a3ce88c2d1732353ff912ed4ee08093d98fe399",
 			},
 			{
 				Name:    "kernel-modules",
 				Version: version,
-				SHA256:  "7a7a1580c1a418de7fef58f4403d5933e679a44612b1a29bf7a1c1c755f488aa",
+				SHA256:  "faca4a5eed0afb6f507a4422d42c4aae8eaa7d0244bfbb000914310388b26063",
 			},
 		},
 		KernelModules: []string{
