@@ -64,9 +64,6 @@ func (s *Server) Run(ctx context.Context) error {
 	m := wire.NewMarshaller()
 	return resonance.RunServer(ctx, l, WireConfig,
 		func(ctx context.Context, c *resonance.Connection) error {
-			ctx, cancel := context.WithTimeout(ctx, timeout)
-			defer cancel()
-
 			for {
 				msg, err := c.ReceiveProton(m)
 				if err != nil {
