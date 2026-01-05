@@ -22,9 +22,8 @@ const (
 )
 
 // WireConfig is the DNS ACME service wire config.
-var WireConfig = resonance.Config[wire.Marshaller]{
-	MaxMessageSize:    4 * 1024,
-	MarshallerFactory: wire.NewMarshaller,
+var WireConfig = resonance.Config{
+	MaxMessageSize: 4 * 1024,
 }
 
 // Address returns address of dns acme endpoint.
@@ -58,18 +57,13 @@ func (s *Server) Run(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 
+	m := wire.NewMarshaller()
 	return resonance.RunServer(ctx, l, WireConfig,
-		func(ctx context.Context, recvCh <-chan any, c *resonance.Connection[wire.Marshaller]) error {
+		func(ctx context.Context, c *resonance.Connection) error {
 			for {
-				var msg any
-				var ok bool
-				select {
-				case <-ctx.Done():
-					return nil
-				case msg, ok = <-recvCh:
-					if !ok {
-						return nil
-					}
+				msg, err := c.ReceiveProton(m)
+				if err != nil {
+					return err
 				}
 
 				req, ok := msg.(*wire.MsgRequest)
@@ -79,7 +73,9 @@ func (s *Server) Run(ctx context.Context) error {
 
 				s.storeRequest(req)
 
-				c.Send(&wire.MsgAck{})
+				if err := c.SendProton(&wire.MsgAck{}, m); err != nil {
+					return err
+				}
 			}
 		},
 	)
