@@ -2,8 +2,6 @@ module build
 
 go 1.24
 
-replace github.com/outofforest/tools => ../../tools
-
 require (
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/diskfs/go-diskfs v1.5.0
