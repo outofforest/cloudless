@@ -103,10 +103,7 @@ func runServer(ctx context.Context, efiData []byte) error {
 					clearRollOver(addr.(*net.UDPAddr).IP, rollOver1, rollOver2)
 
 					if len(rrq.Options) == 0 {
-						end := blockSize
-						if end > efiDataLen {
-							end = efiDataLen
-						}
+						end := min(blockSize, efiDataLen)
 						if _, err := conn.WriteTo(prepareDataMessage(1, efiData[:end], b), addr); err != nil {
 							return errors.WithStack(err)
 						}
@@ -160,10 +157,7 @@ func runServer(ctx context.Context, efiData []byte) error {
 							clearRollOver(addr.(*net.UDPAddr).IP, rollOver1, rollOver2)
 							continue loop
 						}
-						end := start + blockSize
-						if end > efiDataLen {
-							end = efiDataLen
-						}
+						end := min(start+blockSize, efiDataLen)
 						if _, err := conn.WriteTo(prepareDataMessage(block+i+1, efiData[start:end], b), addr); err != nil {
 							return errors.WithStack(err)
 						}

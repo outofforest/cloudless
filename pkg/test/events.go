@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func newReceiver(ch interface{}) *receiver {
+func newReceiver(ch any) *receiver {
 	chVal := reflect.ValueOf(ch)
 	if chVal.Kind() != reflect.Chan {
 		panic("ch is not a channel")
@@ -25,7 +25,7 @@ type receiver struct {
 	ch reflect.Value
 }
 
-func (r *receiver) Receive(ctx context.Context) (interface{}, bool, error) {
+func (r *receiver) Receive(ctx context.Context) (any, bool, error) {
 	chosen, recv, recvOK := reflect.Select([]reflect.SelectCase{
 		{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ctx.Done())},
 		{Dir: reflect.SelectRecv, Chan: r.ch},
@@ -48,7 +48,7 @@ func (r *receiver) Len() int {
 }
 
 // AssertForefrontEvents asserts that the expected list of events was received on the actual channel.
-func AssertForefrontEvents(ctx context.Context, t *testing.T, actualCh interface{}, expected ...interface{}) bool {
+func AssertForefrontEvents(ctx context.Context, t *testing.T, actualCh any, expected ...any) bool {
 	r := newReceiver(actualCh)
 
 	ok := true
@@ -77,7 +77,7 @@ func AssertForefrontEvents(ctx context.Context, t *testing.T, actualCh interface
 
 // AssertEvents asserts that the expected list of events was received on the actual channel and no unexpected events
 // are enqueued there.
-func AssertEvents(ctx context.Context, t *testing.T, actualCh interface{}, expected ...interface{}) bool {
+func AssertEvents(ctx context.Context, t *testing.T, actualCh any, expected ...any) bool {
 	if !AssertForefrontEvents(ctx, t, actualCh, expected...) {
 		return false
 	}

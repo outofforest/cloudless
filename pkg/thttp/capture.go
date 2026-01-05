@@ -18,6 +18,7 @@ func CaptureStatus(w http.ResponseWriter, status *int) http.ResponseWriter {
 type captureStatus struct {
 	http.ResponseWriter
 	http.Hijacker
+
 	status *int
 }
 

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	. "github.com/outofforest/cloudless" //nolint:stylecheck
+	. "github.com/outofforest/cloudless" //nolint:staticcheck
 	"github.com/outofforest/cloudless/pkg/acme"
 	"github.com/outofforest/cloudless/pkg/acpi"
 	"github.com/outofforest/cloudless/pkg/container"

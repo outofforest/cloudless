@@ -58,28 +58,6 @@ func isASCII(s string) bool {
 	return true
 }
 
-func (t *LoggingTransport) logBody(log *zap.Logger, subj string, body io.ReadCloser) io.ReadCloser {
-	//nolint:nestif
-	if body != nil {
-		if ce := log.Check(zapcore.DebugLevel, "HTTP "+subj); ce != nil {
-			data, err := io.ReadAll(body)
-			if err != nil {
-				logger.Get(t.Context).Debug("failed to read "+subj, zap.Error(err))
-			}
-			body = io.NopCloser(bytes.NewReader(data))
-
-			if dataLen := len(data); dataLen > 0 {
-				fields := []zap.Field{zap.Int(subj+"Length", dataLen)}
-				if isASCII(string(data)) {
-					fields = append(fields, zap.ByteString(subj+"Data", data))
-				}
-				ce.Write(fields...)
-			}
-		}
-	}
-	return body
-}
-
 // RoundTrip is an implementation of RoundTripper
 //
 // RoundTripper is an interface representing the ability to execute a
@@ -103,6 +81,28 @@ func (t *LoggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	log.Info("HTTP request ended", zap.String("status", resp.Status))
 
 	return resp, err
+}
+
+func (t *LoggingTransport) logBody(log *zap.Logger, subj string, body io.ReadCloser) io.ReadCloser {
+	//nolint:nestif
+	if body != nil {
+		if ce := log.Check(zapcore.DebugLevel, "HTTP "+subj); ce != nil {
+			data, err := io.ReadAll(body)
+			if err != nil {
+				logger.Get(t.Context).Debug("failed to read "+subj, zap.Error(err))
+			}
+			body = io.NopCloser(bytes.NewReader(data))
+
+			if dataLen := len(data); dataLen > 0 {
+				fields := []zap.Field{zap.Int(subj+"Length", dataLen)}
+				if isASCII(string(data)) {
+					fields = append(fields, zap.ByteString(subj+"Data", data))
+				}
+				ce.Write(fields...)
+			}
+		}
+	}
+	return body
 }
 
 // Test processes an http.Request (usually obtained from httptest.NewRequest)

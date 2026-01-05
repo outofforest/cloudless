@@ -1,6 +1,6 @@
 module github.com/outofforest/cloudless
 
-go 1.23.0
+go 1.25
 
 require (
 	github.com/beevik/ntp v1.4.3

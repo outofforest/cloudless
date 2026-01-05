@@ -706,7 +706,7 @@ func putRecord(r rRecord, b []byte, h *header, maxMsgLength uint16) []byte {
 
 func putName(name string, b []byte) []byte {
 	if name != "" {
-		for _, part := range strings.Split(name, ".") {
+		for part := range strings.SplitSeq(name, ".") {
 			b = append(b, uint8(len(part)))
 			b = append(b, part...)
 		}

@@ -13,12 +13,14 @@ pub fn main() uefi.Status {
     log("I am cloudless bootloader.");
 
     var initramfs_handle: ?uefi.Handle = null;
-    var ret = boot_services.installMultipleProtocolInterfaces(
+    var ret = boot_services.installProtocolInterfaces(
         @ptrCast(&initramfs_handle),
-        &uefi.protocol.DevicePath.guid,
-        &initrd_lf2_handle,
-        &LoadFile2.guid,
-        &lf2_protocol,
+        .{
+            uefi.protocol.DevicePath,
+            &initrd_lf2_handle,
+            LoadFile2,
+            &lf2_protocol,
+        },
     );
     if (ret != uefi.Status.Success) {
         return onError(ret, "Installing initrd media handler failed.");

@@ -1,13 +1,15 @@
 module build
 
-go 1.22.0
+go 1.24
+
+replace github.com/outofforest/tools => ../../tools
 
 require (
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/diskfs/go-diskfs v1.5.0
-	github.com/outofforest/build/v2 v2.4.0
+	github.com/outofforest/build/v2 v2.5.0
 	github.com/outofforest/logger v0.6.0
-	github.com/outofforest/tools v1.2.0
+	github.com/outofforest/tools v1.4.2
 	github.com/pkg/errors v0.9.1
 	github.com/samber/lo v1.49.1
 	github.com/sassoftware/go-rpmutils v0.4.0
@@ -32,7 +34,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.33.0 // indirect
-	golang.org/x/mod v0.22.0 // indirect
+	golang.org/x/mod v0.23.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 )

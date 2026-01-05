@@ -2,6 +2,7 @@ package build
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -26,6 +27,7 @@ import (
 )
 
 const (
+	repoURL          = "http://mirror.slu.cz/fedora/linux/updates/43/Everything/x86_64/Packages/k/"
 	configFile       = "config.json"
 	baseDistroFile   = "distro.base.tar"
 	distroFile       = "distro.tar"
@@ -315,10 +317,12 @@ func downloadKernel(ctx context.Context, kernelPackage Package, path string) err
 	defer resp.Body.Close()
 
 	hasher := sha256.New()
+	buf := &bytes.Buffer{}
 
-	rpm, err := rpmutils.ReadRpm(io.TeeReader(resp.Body, hasher))
+	rpm, err := rpmutils.ReadRpm(io.TeeReader(io.TeeReader(resp.Body, buf), hasher))
 	if err != nil {
-		return errors.WithStack(err)
+		fmt.Println(buf.String())
+		return errors.Wrapf(err, "failed reading RPM package %s", kernelPackageURL)
 	}
 	pReader, err := rpm.PayloadReaderExtended()
 	if err != nil {
@@ -579,16 +583,5 @@ func writeModule(name string, tw *tar.Writer, moduleDir string) error {
 }
 
 func packageURL(p Package) string {
-	category := p.Name
-	if pos := strings.Index(category, "-"); pos >= 0 {
-		category = category[:pos]
-	}
-	versionParts := strings.Split(p.Version, "-")
-	version := versionParts[0]
-	props := strings.Split(versionParts[1], ".")
-
-	return fmt.Sprintf(
-		"https://kojipkgs.fedoraproject.org/packages/%[1]s/%[3]s/%[4]s.%[5]s/%[6]s/%[2]s-%[3]s-%[4]s.%[5]s.%[6]s.rpm",
-		category, p.Name, version, props[0], props[1], props[2],
-	)
+	return repoURL + p.Name + "-" + p.Version + ".rpm"
 }

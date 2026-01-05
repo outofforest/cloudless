@@ -129,13 +129,13 @@ func (s *Server) ListenAddr() net.Addr {
 	return s.listener.Addr()
 }
 
-func (s *Server) connContext(ctx context.Context, conn net.Conn) context.Context {
-	return logger.With(ctx, zap.Stringer("remoteAddr", conn.RemoteAddr()))
-}
-
 // Unlock implements locker.Locker.
 func (s *Server) Unlock() {
 	s.locked.Done()
+}
+
+func (s *Server) connContext(ctx context.Context, conn net.Conn) context.Context {
+	return logger.With(ctx, zap.Stringer("remoteAddr", conn.RemoteAddr()))
 }
 
 // This mandatory Middleware ensures that any running handlers prevent the
