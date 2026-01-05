@@ -12,43 +12,37 @@ pub fn main() uefi.Status {
 
     log("I am cloudless bootloader.");
 
-    var initramfs_handle: ?uefi.Handle = null;
-    var ret = boot_services.installProtocolInterfaces(
-        @ptrCast(&initramfs_handle),
+    _ = boot_services.installProtocolInterfaces(
+        null,
         .{
-            uefi.protocol.DevicePath,
-            &initrd_lf2_handle,
-            LoadFile2,
-            &lf2_protocol,
+            &uefi.protocol.DevicePath,
+            &LoadFile2,
         },
-    );
-    if (ret != uefi.Status.Success) {
-        return onError(ret, "Installing initrd media handler failed.");
-    }
+    ) catch |err| {
+        return onError(err, "Installing initrd media handler failed.");
+    };
 
-    var vmlinuz_handle: ?uefi.Handle = null;
-    ret = boot_services.loadImage(true, uefi.handle, null, @ptrCast(vmlinuz), vmlinuz.len, &vmlinuz_handle);
-    if (ret != uefi.Status.Success) {
-        return onError(ret, "Loading kernel failed.");
-    }
+    const vmlinuz_handle = boot_services.loadImage(true, uefi.handle,.{
+            .buffer = vmlinuz,
+        }) catch |err| {
+        return onError(err, "Loading kernel failed.");
+    };
 
-    var loaded_vmlinuz: *uefi.protocol.LoadedImage = undefined;
-    ret = boot_services.handleProtocol(vmlinuz_handle.?, &uefi.protocol.LoadedImage.guid, @ptrCast(&loaded_vmlinuz));
-    if (ret != uefi.Status.Success) {
-        return onError(ret, "Retrieving kernel image info failed.");
-    }
+    const loaded_vmlinuz = boot_services.handleProtocol(uefi.protocol.LoadedImage, vmlinuz_handle) catch |err| {
+        return onError(err, "Retrieving kernel image info failed.");
+    };
     const cmd = [_:0]u16{
         's', 'e', 'l', 'i','n','u','x','=','0', ' ',
         'd','e','f','a','u','l','t','_','h','u','g','e','p','a','g','e','s','z','=','1','G' , ' ',
         'a', 'u', 'd', 'i', 't', '=', '0',
     };
-    loaded_vmlinuz.load_options = @constCast(@ptrCast(&cmd[0]));
-    loaded_vmlinuz.load_options_size = 2 * (cmd.len + 1);
+    loaded_vmlinuz.?.load_options = @constCast(@ptrCast(&cmd[0]));
+    loaded_vmlinuz.?.load_options_size = 2 * (cmd.len + 1);
 
-    return onError(
-        boot_services.startImage(vmlinuz_handle.?, null, null),
-        "Booting kernel failed.",
-    );
+    _ = boot_services.startImage(vmlinuz_handle) catch |err| {
+        return onError(err,"Booting kernel failed.");
+    };
+    return uefi.Status.success;
 }
 
 fn loadFile(
@@ -96,14 +90,14 @@ const LF2Handler = extern struct {
 
 var initrd_lf2_handle = LF2Handler{
     .vendor = .{
-        .type = uefi.DevicePath.Type.Media,
-        .subtype = uefi.DevicePath.Media.Subtype.Vendor,
+        .type = uefi.DevicePath.Type.media,
+        .subtype = uefi.DevicePath.Media.Subtype.vendor,
         .length = @sizeOf(uefi.DevicePath.Media.VendorDevicePath),
         .guid = initrd_media_guid,
     },
     .end = .{
-        .type = uefi.DevicePath.Type.End,
-        .subtype = uefi.DevicePath.End.Subtype.EndEntire,
+        .type = uefi.DevicePath.Type.end,
+        .subtype = uefi.DevicePath.End.Subtype.end_entire,
         .length = @sizeOf(uefi.DevicePath.End.EndEntireDevicePath),
     },
 };
@@ -125,148 +119,149 @@ const lf2_protocol = LoadFile2{
     ._load_file = &loadFile,
 };
 
-fn onError(s: uefi.Status, msg: []const u8) uefi.Status {
+fn onError(err: uefi.Error, msg: []const u8) uefi.Status {
     log(msg);
-    switch (s) {
-        uefi.Status.LoadError => {
+    const status = uefi.Status.fromError(@errorCast(err));
+    switch (status) {
+        uefi.Status.load_error => {
             log("LoadError");
         },
-        uefi.Status.InvalidParameter => {
+        uefi.Status.invalid_parameter => {
             log("InvalidParameter");
         },
-        uefi.Status.Unsupported => {
+        uefi.Status.unsupported => {
             log("Unsupported");
         },
-        uefi.Status.BadBufferSize => {
+        uefi.Status.bad_buffer_size => {
             log("BadBufferSize");
         },
-        uefi.Status.BufferTooSmall => {
+        uefi.Status.buffer_too_small => {
             log("BufferTooSmall");
         },
-        uefi.Status.NotReady => {
+        uefi.Status.not_ready => {
             log("NotReady");
         },
-        uefi.Status.DeviceError => {
+        uefi.Status.device_error => {
             log("DeviceError");
         },
-        uefi.Status.WriteProtected => {
+        uefi.Status.write_protected => {
             log("WriteProtected");
         },
-        uefi.Status.OutOfResources => {
+        uefi.Status.out_of_resources => {
             log("OutOfResources");
         },
-        uefi.Status.VolumeCorrupted => {
+        uefi.Status.volume_corrupted => {
             log("VolumeCorrupted");
         },
-        uefi.Status.VolumeFull => {
+        uefi.Status.volume_full => {
             log("VolumeFull");
         },
-        uefi.Status.NoMedia => {
+        uefi.Status.no_media => {
             log("NoMedia");
         },
-        uefi.Status.MediaChanged => {
+        uefi.Status.media_changed => {
             log("MediaChanged");
         },
-        uefi.Status.NotFound => {
+        uefi.Status.not_found => {
             log("NotFound");
         },
-        uefi.Status.AccessDenied => {
+        uefi.Status.access_denied => {
             log("AccessDenied");
         },
-        uefi.Status.NoResponse => {
+        uefi.Status.no_response => {
             log("NoResponse");
         },
-        uefi.Status.NoMapping => {
+        uefi.Status.no_mapping => {
             log("NoMapping");
         },
-        uefi.Status.Timeout => {
+        uefi.Status.timeout => {
             log("Timeout");
         },
-        uefi.Status.NotStarted => {
+        uefi.Status.not_started => {
             log("NotStarted");
         },
-        uefi.Status.AlreadyStarted => {
+        uefi.Status.already_started => {
             log("AlreadyStarted");
         },
-        uefi.Status.Aborted => {
+        uefi.Status.aborted => {
             log("Aborted");
         },
-        uefi.Status.IcmpError => {
+        uefi.Status.icmp_error => {
             log("IcmpError");
         },
-        uefi.Status.TftpError => {
+        uefi.Status.tftp_error => {
             log("TftpError");
         },
-        uefi.Status.ProtocolError => {
+        uefi.Status.protocol_error => {
             log("ProtocolError");
         },
-        uefi.Status.IncompatibleVersion => {
+        uefi.Status.incompatible_version => {
             log("IncompatibleVersion");
         },
-        uefi.Status.SecurityViolation => {
+        uefi.Status.security_violation => {
             log("SecurityViolation");
         },
-        uefi.Status.CrcError => {
+        uefi.Status.crc_error => {
             log("CrcError");
         },
-        uefi.Status.EndOfMedia => {
+        uefi.Status.end_of_media => {
             log("EndOfMedia");
         },
-        uefi.Status.EndOfFile => {
+        uefi.Status.end_of_file => {
             log("EndOfFile");
         },
-        uefi.Status.InvalidLanguage => {
+        uefi.Status.invalid_language => {
             log("InvalidLanguage");
         },
-        uefi.Status.CompromisedData => {
+        uefi.Status.compromised_data => {
             log("CompromisedData");
         },
-        uefi.Status.IpAddressConflict => {
+        uefi.Status.ip_address_conflict => {
             log("IpAddressConflict");
         },
-        uefi.Status.HttpError => {
+        uefi.Status.http_error => {
             log("HttpError");
         },
-        uefi.Status.NetworkUnreachable => {
+        uefi.Status.network_unreachable => {
             log("NetworkUnreachable");
         },
-        uefi.Status.HostUnreachable => {
+        uefi.Status.host_unreachable => {
             log("HostUnreachable");
         },
-        uefi.Status.ProtocolUnreachable => {
+        uefi.Status.protocol_unreachable => {
             log("ProtocolUnreachable");
         },
-        uefi.Status.PortUnreachable => {
+        uefi.Status.port_unreachable => {
             log("PortUnreachable");
         },
-        uefi.Status.ConnectionFin => {
+        uefi.Status.connection_fin => {
             log("ConnectionFin");
         },
-        uefi.Status.ConnectionReset => {
+        uefi.Status.connection_reset => {
             log("ConnectionReset");
         },
-        uefi.Status.ConnectionRefused => {
+        uefi.Status.connection_refused => {
             log("ConnectionRefused");
         },
-        uefi.Status.WarnUnknownGlyph => {
+        uefi.Status.warn_unknown_glyph => {
             log("WarnUnknownGlyph");
         },
-        uefi.Status.WarnDeleteFailure => {
+        uefi.Status.warn_delete_failure => {
             log("WarnDeleteFailure");
         },
-        uefi.Status.WarnWriteFailure => {
+        uefi.Status.warn_write_failure => {
             log("WarnWriteFailure");
         },
-        uefi.Status.WarnBufferTooSmall => {
+        uefi.Status.warn_buffer_too_small => {
             log("WarnBufferTooSmall");
         },
-        uefi.Status.WarnStaleData => {
+        uefi.Status.warn_stale_data => {
             log("WarnStaleData");
         },
-        uefi.Status.WarnFileSystem => {
+        uefi.Status.warn_file_system => {
             log("WarnFileSystem");
         },
-        uefi.Status.WarnResetRequired => {
+        uefi.Status.warn_reset_required => {
             log("WarnResetRequired");
         },
         else => {
@@ -274,14 +269,14 @@ fn onError(s: uefi.Status, msg: []const u8) uefi.Status {
         },
     }
 
-    _ = boot_services.stall(30 * 1000 * 1000);
+    _ = boot_services.stall(30 * 1000 * 1000) catch {};
 
-    return s;
+    return status;
 }
 
 fn log(msg: []const u8) void {
     for (msg) |c| {
-        _ = con_out.outputString(&[_:0]u16{c});
+        _ = con_out.outputString(&[_:0]u16{c}) catch {};
     }
-    _ = con_out.outputString(&[_:0]u16{ '\r', '\n' });
+    _ = con_out.outputString(&[_:0]u16{ '\r', '\n' }) catch {};
 }
