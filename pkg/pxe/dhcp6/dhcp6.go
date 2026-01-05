@@ -348,7 +348,7 @@ func selectIP() net.IP {
 }
 
 func bootloaderURL(baseIP *net.IPNet) []byte {
-	return []byte(fmt.Sprintf("tftp://[%s]/bootx64.efi", baseIP.IP))
+	return fmt.Appendf([]byte{}, "tftp://[%s]/bootx64.efi", baseIP.IP)
 }
 
 type message struct {

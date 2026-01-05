@@ -36,20 +36,20 @@ func Address(host string) string {
 	return tnet.Join(host, Port)
 }
 
-// NewServer creates new ACME server.
-func NewServer(port uint16) *Server {
-	return &Server{
-		port:       port,
-		challenges: map[string]map[uuid.UUID]acmeRecord{},
-	}
-}
-
 // Server is the ACME server accepting DNS challenges.
 type Server struct {
 	port uint16
 
 	mu         sync.Mutex
 	challenges map[string]map[uuid.UUID]acmeRecord
+}
+
+// NewServer creates new ACME server.
+func NewServer(port uint16) *Server {
+	return &Server{
+		port:       port,
+		challenges: map[string]map[uuid.UUID]acmeRecord{},
+	}
 }
 
 // Run runs ACME server.

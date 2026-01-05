@@ -150,48 +150,6 @@ func (cir *containerImagesRepo) Register(images []string) {
 // PrepareFn is the function type used to register functions preparing host.
 type PrepareFn func(ctx context.Context) error
 
-// NewSubconfiguration creates subconfiguration.
-func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
-	c2 := &Configuration{
-		topConfig:           c,
-		pkgRepo:             c.pkgRepo,
-		containerImagesRepo: c.containerImagesRepo,
-	}
-	return c2, func() {
-		if c2.remoteLoggingConfig.URL != "" {
-			c.RemoteLogging(c2.remoteLoggingConfig.URL)
-		}
-		c.RegisterMetrics(c2.metricGatherers...)
-		if c2.requireIPForwarding {
-			c.RequireIPForwarding()
-		}
-		if c2.requireInitramfs {
-			c.RequireInitramfs()
-		}
-		if c2.requireVirt {
-			c.RequireVirt()
-		}
-		c.RequireKernelModules(c2.kernelModules...)
-		c.RequirePackages(c2.packages...)
-		c.SetHostname(c2.hostname)
-		if c2.gateway != nil {
-			c.SetGateway(c2.gateway)
-		}
-		c.AddRoutes(c2.routes...)
-		c.AddDNSes(c2.dnses...)
-		c.AddYumMirrors(c2.yumMirrors...)
-		c.AddContainerMirrors(c2.containerMirrors...)
-		c.AddNetworks(c2.networks...)
-		c.AddBridges(c2.bridges...)
-		c.AddVLANs(c2.vlans...)
-		c.AddFirewallRules(c2.firewall...)
-		c.AddHugePages(c2.hugePages)
-		c.mounts = append(c.mounts, c2.mounts...)
-		c.Prepare(c2.prepare...)
-		c.StartServices(c2.services...)
-	}
-}
-
 // SealedConfiguration exposes information collected by the configurators.
 type SealedConfiguration interface {
 	IsContainer() bool
@@ -246,6 +204,48 @@ type Configuration struct {
 	prepare             []PrepareFn
 	services            []ServiceConfig
 	mounts              []mountConfig
+}
+
+// NewSubconfiguration creates subconfiguration.
+func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
+	c2 := &Configuration{
+		topConfig:           c,
+		pkgRepo:             c.pkgRepo,
+		containerImagesRepo: c.containerImagesRepo,
+	}
+	return c2, func() {
+		if c2.remoteLoggingConfig.URL != "" {
+			c.RemoteLogging(c2.remoteLoggingConfig.URL)
+		}
+		c.RegisterMetrics(c2.metricGatherers...)
+		if c2.requireIPForwarding {
+			c.RequireIPForwarding()
+		}
+		if c2.requireInitramfs {
+			c.RequireInitramfs()
+		}
+		if c2.requireVirt {
+			c.RequireVirt()
+		}
+		c.RequireKernelModules(c2.kernelModules...)
+		c.RequirePackages(c2.packages...)
+		c.SetHostname(c2.hostname)
+		if c2.gateway != nil {
+			c.SetGateway(c2.gateway)
+		}
+		c.AddRoutes(c2.routes...)
+		c.AddDNSes(c2.dnses...)
+		c.AddYumMirrors(c2.yumMirrors...)
+		c.AddContainerMirrors(c2.containerMirrors...)
+		c.AddNetworks(c2.networks...)
+		c.AddBridges(c2.bridges...)
+		c.AddVLANs(c2.vlans...)
+		c.AddFirewallRules(c2.firewall...)
+		c.AddHugePages(c2.hugePages)
+		c.mounts = append(c.mounts, c2.mounts...)
+		c.Prepare(c2.prepare...)
+		c.StartServices(c2.services...)
+	}
 }
 
 // Sealed gives access to information collected by configurators.
@@ -1200,7 +1200,7 @@ func unmount() error {
 	}
 
 	mounts := []string{}
-	for _, mount := range strings.Split(string(mountsRaw), "\n") {
+	for mount := range strings.SplitSeq(string(mountsRaw), "\n") {
 		props := strings.SplitN(mount, " ", 3)
 		if len(props) < 2 {
 			// last empty line

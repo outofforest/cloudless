@@ -48,10 +48,7 @@ func NewExpBackoff(config ExpConfig) *Exponential {
 // Backoff returns the duration to wait and updates the inner state.
 func (b *Exponential) Backoff() time.Duration {
 	beforeScale := b.current
-	b.current = time.Duration(float64(b.current) * b.config.Scale)
-	if b.current > b.config.Max {
-		b.current = b.config.Max
-	}
+	b.current = min(time.Duration(float64(b.current)*b.config.Scale), b.config.Max)
 	return beforeScale
 }
 

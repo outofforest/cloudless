@@ -32,20 +32,20 @@ func Address(host string) string {
 	return tnet.Join(host, Port)
 }
 
-// NewServer creates new DKIM server.
-func NewServer(port uint16) *Server {
-	return &Server{
-		port:       port,
-		publicKeys: map[string]string{},
-	}
-}
-
 // Server is the DKIM server accepting DNS record requests.
 type Server struct {
 	port uint16
 
 	mu         sync.Mutex
 	publicKeys map[string]string
+}
+
+// NewServer creates new DKIM server.
+func NewServer(port uint16) *Server {
+	return &Server{
+		port:       port,
+		publicKeys: map[string]string{},
+	}
 }
 
 // Run runs ACME server.

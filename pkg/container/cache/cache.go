@@ -378,7 +378,7 @@ func authURL(authSetup string) (string, error) {
 
 	var authURL string
 	first := true
-	for _, kv := range strings.Split(authSetup[spacePos+1:], ",") {
+	for kv := range strings.SplitSeq(authSetup[spacePos+1:], ",") {
 		parts := strings.Split(kv, "=")
 		if len(parts) != 2 {
 			return "", errors.Errorf("invalid key-value %q", kv)
