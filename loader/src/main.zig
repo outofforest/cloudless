@@ -15,8 +15,8 @@ pub fn main() uefi.Status {
     _ = boot_services.installProtocolInterfaces(
         null,
         .{
-            &uefi.protocol.DevicePath,
-            &LoadFile2,
+            &initrd_lf2_handle,
+            &lf2_protocol,
         },
     ) catch |err| {
         return onError(err, "Installing initrd media handler failed.");
@@ -53,16 +53,16 @@ fn loadFile(
     buffer: ?[*]u8,
 ) callconv(uefi.cc) uefi.Status {
     if (boot_policy) {
-        return uefi.Status.Unsupported;
+        return uefi.Status.unsupported;
     }
 
     if (buffer_size.* < initramfs.len) {
         buffer_size.* = initramfs.len;
-        return uefi.Status.BufferTooSmall;
+        return uefi.Status.buffer_too_small;
     }
 
     if (buffer == null) {
-        return uefi.Status.InvalidParameter;
+        return uefi.Status.invalid_parameter;
     }
 
     var i: u32 = 0;
@@ -71,7 +71,7 @@ fn loadFile(
         i += 1;
     }
 
-    return uefi.Status.Success;
+    return uefi.Status.success;
 }
 
 const initrd_media_guid = uefi.Guid{
@@ -86,6 +86,8 @@ const initrd_media_guid = uefi.Guid{
 const LF2Handler = extern struct {
     vendor: uefi.DevicePath.Media.VendorDevicePath,
     end: uefi.DevicePath.End.EndEntireDevicePath,
+
+    pub const guid align(8) = uefi.protocol.DevicePath.guid;
 };
 
 var initrd_lf2_handle = LF2Handler{
