@@ -21,8 +21,6 @@ const (
 
 	// DomainPrefix is the domain prefix defined by ACME.
 	DomainPrefix = "_acme-challenge."
-
-	timeout = time.Minute
 )
 
 // WireConfig is the DNS ACME service wire config.
