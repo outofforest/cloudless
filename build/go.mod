@@ -1,6 +1,6 @@
 module build
 
-go 1.24
+go 1.25
 
 require (
 	github.com/cavaliergopher/cpio v1.0.1
