@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/cavaliergopher/cpio"
 	"github.com/digitalocean/go-libvirt"
@@ -32,6 +31,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/kernel"
 	"github.com/outofforest/cloudless/pkg/mount"
 	"github.com/outofforest/cloudless/pkg/tcontext"
+	"github.com/outofforest/cloudless/pkg/virt"
 	"github.com/outofforest/libexec"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/logger/remote"
@@ -1237,46 +1237,5 @@ func stopVMs(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 
-	domains, _, err := lv.ConnectListAllDomains(1,
-		libvirt.ConnectListDomainsActive|libvirt.ConnectListDomainsInactive)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
-		for _, d := range domains {
-			spawn("stopVM", parallel.Continue, func(ctx context.Context) error {
-				log := logger.Get(ctx)
-
-				for trial := 0; ; trial++ {
-					active, err := lv.DomainIsActive(d)
-					if err != nil {
-						if libvirt.IsNotFound(err) {
-							return nil
-						}
-						return errors.WithStack(err)
-					}
-
-					if active == 0 {
-						return nil
-					}
-
-					err = lv.DomainShutdown(d)
-					switch {
-					case err == nil:
-						if trial%10 == 0 {
-							log.Info("VM is still running", zap.String("vm", d.Name))
-						}
-						<-time.After(time.Second)
-					case libvirt.IsNotFound(err):
-						return nil
-					default:
-						return errors.WithStack(err)
-					}
-				}
-			})
-		}
-
-		return nil
-	})
+	return virt.StopVMs(ctx, lv, nil)
 }

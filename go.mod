@@ -16,8 +16,8 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/mdlayher/genetlink v1.3.2
 	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42
-	github.com/outofforest/archive v0.4.0
-	github.com/outofforest/build/v2 v2.6.1
+	github.com/outofforest/archive v0.5.0
+	github.com/outofforest/build/v2 v2.6.2
 	github.com/outofforest/libexec v0.3.9
 	github.com/outofforest/logger v0.6.0
 	github.com/outofforest/mass v0.2.1

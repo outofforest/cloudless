@@ -1,4 +1,7 @@
 <domain type="kvm">
+    <metadata>
+        <cloudless:cloudless xmlns:cloudless="http://go.exw.co/cloudless" />
+    </metadata>
     <name>{{ .Name }}</name>
     <uuid>{{ .UUID }}</uuid>
     <memory unit="GiB">{{ .Memory }}</memory>
@@ -15,9 +18,11 @@
             <feature enabled="no" name="secure-boot"/>
         </firmware>
         <loader readonly="yes" type="pflash">/usr/share/edk2/ovmf/OVMF_CODE.fd</loader>
+{{ if and .Kernel .Initrd }}
         <kernel>{{ .Kernel }}</kernel>
         <initrd>{{ .Initrd }}</initrd>
         <cmdline>selinux=0 default_hugepagesz=1G audit=0</cmdline>
+{{ end }}
     </os>
     <features>
         <acpi/>
@@ -92,13 +97,29 @@
             <driver queues="8" iothread="1"/>
             <address type="pci" domain="0x0000" bus="0x06" slot="0x00" function="0x0"/>
         </controller>
+{{ if .EFIDiskPath }}
+        <disk type="file" device="disk">
+            <driver name="qemu" type="raw"/>
+            <source file="{{ .EFIDiskPath }}"/>
+            <target dev="vda" bus="virtio"/>
+            <shareable/>
+            <boot order='1'/>
+        </disk>
+{{ end}}
 {{ range .Networks }}
-        <interface type="bridge">
+        <interface type="network">
             <mac address="{{ .MAC }}"/>
-            <source bridge='{{ .BridgeName }}'/>
+            <source network='{{ .SourceName }}'/>
             <target dev='{{ .InterfaceName }}'/>
             <model type="virtio"/>
-            <address type="pci" domain="0x0000" bus="0x07" slot="0x00" function="0x0"/>
+        </interface>
+{{ end }}
+{{ range .Bridges }}
+        <interface type="bridge">
+            <mac address="{{ .MAC }}"/>
+            <source bridge='{{ .SourceName }}'/>
+            <target dev='{{ .InterfaceName }}'/>
+            <model type="virtio"/>
         </interface>
 {{ end }}
         <channel type="spicevmc">
