@@ -51,6 +51,22 @@ func Service(repoRoot string, release uint64) host.Configurator {
 	)
 }
 
+// Mirrors defines package repository mirrors.
+func Mirrors(mirrors ...string) host.Configurator {
+	return func(c *host.Configuration) error {
+		c.AddYumMirrors(mirrors...)
+		return nil
+	}
+}
+
+// Packages installs packages.
+func Packages(packages ...string) host.Configurator {
+	return func(c *host.Configuration) error {
+		c.RequirePackages(packages...)
+		return nil
+	}
+}
+
 func createRepo(ctx context.Context, repoDir string, packages []string) error {
 	repoInfo, err := os.Stat(repoDir)
 	if err == nil && repoInfo.IsDir() {

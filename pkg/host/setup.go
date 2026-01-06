@@ -32,6 +32,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/mount"
 	"github.com/outofforest/cloudless/pkg/tcontext"
 	"github.com/outofforest/cloudless/pkg/virt"
+	"github.com/outofforest/cloudless/pkg/wait"
 	"github.com/outofforest/libexec"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/logger/remote"
@@ -42,9 +43,9 @@ const (
 	// ContainerEnvVar is used to set container name.
 	ContainerEnvVar = "CLOUDLESS_CONTAINER"
 
-	filesystem = "btrfs"
+	btrfsFilesystem = "btrfs"
 	// https://btrfs.readthedocs.io/en/latest/Administration.html#btrfs-specific-mount-options
-	btrfsOptions = "commit=1,flushoncommit,usebackuproot"
+	btrfsOptions = "commit=1,flushoncommit,rescue=usebackuproot"
 
 	qemuSocket = "/var/run/libvirt/virtqemud-sock"
 )
@@ -489,26 +490,16 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 				}
 			}
 
-			if err := configureMounts(cfg.mounts); err != nil {
-				return err
-			}
-
-			if cfg.isContainer {
-				if err := mount.ContainerRoot(); err != nil {
-					return err
-				}
-			}
-
-			if err := configureDNS(cfg.dnses); err != nil {
-				return err
-			}
-			if err := configureIPv6(); err != nil {
-				return err
-			}
 			if err := configureEnv(cfg.hostname); err != nil {
 				return err
 			}
+			if err := configureDNS(cfg.dnses); err != nil {
+				return err
+			}
 			if err := configureHostname(cfg.hostname); err != nil {
+				return err
+			}
+			if err := configureIPv6(); err != nil {
 				return err
 			}
 			if err := configureNetworks(cfg.networks); err != nil {
@@ -531,6 +522,21 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 			}
 			if err := configureMasters(cfg.networks, cfg.bridges); err != nil {
 				return err
+			}
+			if err := configureMounts(ctx, cfg.mounts); err != nil {
+				return err
+			}
+
+			if cfg.isContainer {
+				if err := mount.ContainerRoot(); err != nil {
+					return err
+				}
+				if err := configureDNS(cfg.dnses); err != nil {
+					return err
+				}
+				if err := configureHostname(cfg.hostname); err != nil {
+					return err
+				}
 			}
 
 			//nolint:nestif
@@ -908,13 +914,16 @@ func configureEnv(hostname string) error {
 }
 
 func installPackages(ctx context.Context, repoMirrors, packages []string) error {
+	if len(packages) == 0 {
+		return nil
+	}
+	if len(repoMirrors) == 0 {
+		return errors.New("no yum mirrors defined")
+	}
+
 	m := map[string]struct{}{}
 	for _, p := range packages {
 		m[p] = struct{}{}
-	}
-
-	if len(m) == 0 {
-		return nil
 	}
 
 	pkgs := make([]string, 0, len(m))
@@ -930,6 +939,10 @@ func installPackages(ctx context.Context, repoMirrors, packages []string) error 
 	}
 	if err := os.WriteFile("/etc/yum.repos.d/cloudless.repo", cloudlessRepo, 0o600); err != nil {
 		return errors.WithStack(err)
+	}
+
+	if err := wait.HTTP(ctx, repoMirrors...); err != nil {
+		return err
 	}
 
 	// TODO (wojciech): One day I will write an rpm package manager in go.
@@ -1059,7 +1072,7 @@ func configureHugePages(hugePages uint64) error {
 		[]byte(strconv.FormatUint(hugePages, 10)), 0o644))
 }
 
-func configureMounts(mounts []mountConfig) error {
+func configureMounts(ctx context.Context, mounts []mountConfig) error {
 	for _, m := range mounts {
 		info, err := os.Stat(m.Source)
 		if err != nil {
@@ -1073,52 +1086,118 @@ func configureMounts(mounts []mountConfig) error {
 			}
 		}
 
-		var flags uintptr
-		var fsType, fsOptions string
-
-		// Is it a block device?
-		var blockDev bool
 		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			blockDev = stat.Mode&syscall.S_IFBLK == syscall.S_IFBLK
-			if blockDev {
-				fsType = filesystem
-				fsOptions = btrfsOptions
-			} else {
-				flags = syscall.MS_BIND | syscall.MS_PRIVATE
+			isBlockDev := stat.Mode&syscall.S_IFBLK == syscall.S_IFBLK
+			if isBlockDev {
+				if err := mountBlockDevice(ctx, m); err != nil {
+					return err
+				}
+				continue
 			}
 		}
 
-		//nolint:nestif
-		if info.IsDir() || blockDev {
-			if err := os.MkdirAll(m.Target, 0o700); err != nil {
-				return errors.WithStack(err)
-			}
-		} else {
-			if err := os.MkdirAll(filepath.Dir(m.Target), 0o700); err != nil {
-				return errors.WithStack(err)
-			}
-			err := func() error {
-				f, err := os.OpenFile(m.Target, os.O_CREATE|os.O_WRONLY|os.O_EXCL, info.Mode())
-				if err != nil {
-					if os.IsExist(err) {
-						return nil
-					}
-					return errors.WithStack(err)
-				}
-				return errors.WithStack(f.Close())
-			}()
-			if err != nil {
+		if info.IsDir() {
+			if err := mountDir(m); err != nil {
 				return err
 			}
+			continue
 		}
-		if err := syscall.Mount(m.Source, m.Target, fsType, flags, fsOptions); err != nil {
-			return errors.WithStack(err)
+
+		if err := mountFile(m, info.Mode()); err != nil {
+			return err
 		}
-		if !m.Writable {
-			if err := syscall.Mount(m.Source, m.Target, fsType, flags|syscall.MS_REMOUNT|syscall.MS_RDONLY,
-				""); err != nil {
+	}
+
+	return nil
+}
+
+const (
+	bindFlags     uintptr = syscall.MS_BIND | syscall.MS_PRIVATE
+	readOnlyFlags uintptr = syscall.MS_REMOUNT | syscall.MS_RDONLY
+)
+
+func mountBlockDevice(ctx context.Context, m mountConfig) error {
+	const mkfsExe = "mkfs.btrfs"
+
+	if err := os.MkdirAll(m.Target, 0o700); err != nil {
+		return errors.WithStack(err)
+	}
+
+	//nolint:nestif
+	if err := syscall.Mount(m.Source, m.Target, btrfsFilesystem, 0, btrfsOptions); err != nil {
+		if _, ok := os.LookupEnv(mkfsExe); !ok {
+			if err := libexec.Exec(ctx, exec.Command("dnf",
+				"install", "-y",
+				"--setopt=keepcache=False",
+				"--setopt=install_weak_deps=False",
+				mkfsExe,
+			)); err != nil {
 				return errors.WithStack(err)
 			}
+		}
+
+		// Create btrfs filesystem if it doesn't exist there.
+		if err := libexec.Exec(ctx, exec.Command(mkfsExe, m.Source)); err != nil {
+			return err
+		}
+
+		if err := syscall.Mount(m.Source, m.Target, btrfsFilesystem, 0, btrfsOptions); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+	if !m.Writable {
+		if err := syscall.Mount(m.Source, m.Target, btrfsFilesystem, readOnlyFlags, ""); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+
+	return nil
+}
+
+func mountDir(m mountConfig) error {
+	if err := os.MkdirAll(m.Target, 0o700); err != nil {
+		return errors.WithStack(err)
+	}
+
+	if err := syscall.Mount(m.Source, m.Target, "", bindFlags, ""); err != nil {
+		return errors.WithStack(err)
+	}
+
+	if !m.Writable {
+		if err := syscall.Mount(m.Source, m.Target, "", bindFlags|readOnlyFlags, ""); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+
+	return nil
+}
+
+func mountFile(m mountConfig, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(m.Target), 0o700); err != nil {
+		return errors.WithStack(err)
+	}
+
+	err := func() error {
+		f, err := os.OpenFile(m.Target, os.O_CREATE|os.O_WRONLY|os.O_EXCL, mode)
+		if err != nil {
+			if os.IsExist(err) {
+				return nil
+			}
+			return errors.WithStack(err)
+		}
+		return errors.WithStack(f.Close())
+	}()
+	if err != nil {
+		return err
+	}
+
+	if err := syscall.Mount(m.Source, m.Target, "", bindFlags, ""); err != nil {
+		return errors.WithStack(err)
+	}
+
+	if !m.Writable {
+		if err := syscall.Mount(m.Source, m.Target, "", bindFlags|readOnlyFlags, ""); err != nil {
+			return errors.WithStack(err)
 		}
 	}
 
@@ -1237,5 +1316,5 @@ func stopVMs(ctx context.Context) error {
 		return errors.WithStack(err)
 	}
 
-	return virt.StopVMs(ctx, lv, nil)
+	return virt.DestroyVMs(ctx, lv, nil)
 }

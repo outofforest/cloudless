@@ -28,6 +28,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/kernel"
 	"github.com/outofforest/cloudless/pkg/parse"
 	"github.com/outofforest/cloudless/pkg/retry"
+	"github.com/outofforest/cloudless/pkg/wait"
 	"github.com/outofforest/libexec"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
@@ -92,6 +93,10 @@ func New(name, containerDir string, configurators ...Configurator) host.Configur
 	return cloudless.Join(
 		cloudless.KernelModules(kernel.Module{Name: "veth"}),
 		cloudless.Service("container-"+name, parallel.Fail, func(ctx context.Context) error {
+			if err := os.RemoveAll(config.ContainerDir); err != nil && !os.IsNotExist(err) {
+				return errors.WithStack(err)
+			}
+
 			cmd, stdInCloser, err := command(ctx, config)
 			if err != nil {
 				return err
@@ -135,12 +140,19 @@ func RunImage(imageTag string, configurators ...RunImageConfigurator) host.Confi
 				return errors.New("image must be run inside container")
 			}
 
-			m, err := fetchManifest(ctx, imageTag, c.ContainerMirrors())
+			log := logger.Get(ctx)
+			mirrors := c.ContainerMirrors()
+
+			if err := wait.HTTP(ctx, mirrors...); err != nil {
+				return err
+			}
+
+			m, err := fetchManifest(ctx, imageTag, mirrors)
 			if err != nil {
 				return err
 			}
 
-			ic, err := fetchConfig(ctx, imageTag, m, c.ContainerMirrors())
+			ic, err := fetchConfig(ctx, imageTag, m, mirrors)
 			if err != nil {
 				return err
 			}
@@ -188,7 +200,6 @@ func RunImage(imageTag string, configurators ...RunImageConfigurator) host.Confi
 				return err
 			}
 
-			log := logger.Get(ctx)
 			stdoutLogger := newStreamLogger(log)
 			stderrLogger := newStreamLogger(log)
 			for {

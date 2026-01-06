@@ -108,7 +108,8 @@ func Container(appDir string, configurators ...Configurator) host.Configurator {
 			container.EnvVar("GF_LOG_MODE", "console"),
 			container.EnvVar("GF_LOG_CONSOLE_LEVEL", "info"),
 			container.EnvVar("GF_LOG_CONSOLE_FORMAT", "json"),
-		))
+		),
+	)
 }
 
 // DataSource adds data source to grafana.

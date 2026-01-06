@@ -249,22 +249,6 @@ func DNS(dns ...string) host.Configurator {
 	}
 }
 
-// YumMirrors defines package repository mirrors.
-func YumMirrors(mirrors ...string) host.Configurator {
-	return func(c *host.Configuration) error {
-		c.AddYumMirrors(mirrors...)
-		return nil
-	}
-}
-
-// ContainerMirrors defines container image mirrors.
-func ContainerMirrors(mirrors ...string) host.Configurator {
-	return func(c *host.Configuration) error {
-		c.AddContainerMirrors(mirrors...)
-		return nil
-	}
-}
-
 // Mount defines mount.
 func Mount(source, target string, writable bool) host.Configurator {
 	return func(c *host.Configuration) error {

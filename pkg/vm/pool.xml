@@ -1,0 +1,6 @@
+<pool type="dir">
+    <name>cloudless</name>
+    <target>
+        <path>/var/lib/libvirt/images/cloudless</path>
+    </target>
+</pool>

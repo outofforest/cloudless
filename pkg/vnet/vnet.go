@@ -28,10 +28,10 @@ var (
 type Config struct {
 	ForwardMode string
 	Name        string
-	MAC         string
-	IP4         string
+	MAC         net.HardwareAddr
+	IP4         net.IP
 	IP4Mask     string
-	IP6         string
+	IP6         net.IP
 	IP6Prefix   uint8
 }
 
@@ -52,7 +52,7 @@ func spec(forwardMode, name, mac string, configurators []Configurator) dev.SpecS
 	vnet := Config{
 		ForwardMode: forwardMode,
 		Name:        name,
-		MAC:         parse.MAC(mac).String(),
+		MAC:         parse.MAC(mac),
 	}
 
 	for _, configurator := range configurators {
@@ -81,10 +81,10 @@ func IPs(ips ...string) Configurator {
 			ones, bits := parsedIP.Mask.Size()
 			if len(parsedIP.IP) == net.IPv4len {
 				maskBytes := binaryutil.BigEndian.PutUint32(math.MaxUint32 << (bits - ones))
-				vnet.IP4 = parsedIP.IP.String()
+				vnet.IP4 = parsedIP.IP
 				vnet.IP4Mask = fmt.Sprintf("%d.%d.%d.%d", maskBytes[0], maskBytes[1], maskBytes[2], maskBytes[3])
 			} else {
-				vnet.IP6 = parsedIP.IP.String()
+				vnet.IP6 = parsedIP.IP
 				vnet.IP6Prefix = uint8(ones)
 			}
 		}

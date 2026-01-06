@@ -15,14 +15,17 @@ import (
 	"github.com/outofforest/tools/pkg/tools/golang"
 )
 
-const (
-	initBinPath   = "bin/init"
-	moduleVersion = "6.17.12-300.fc43.x86_64"
-)
+const moduleVersion = "6.17.12-300.fc43.x86_64"
 
 var config = cloudless.Config{
-	InitBinPath: initBinPath,
-	EFIPath:     "bin/efi.img",
+	Input: cloudless.InputConfig{
+		InitBin: "bin/init",
+	},
+	Output: cloudless.OutputConfig{
+		EFI:       "bin/efi.img",
+		Kernel:    "bin/vmlinuz",
+		Initramfs: "bin/initramfs.img",
+	},
 	Distro: cloudless.DistroConfig{
 		EFI: cloudless.EFI{
 			Version: "v1.0.0",
@@ -70,16 +73,32 @@ var config = cloudless.Config{
 
 const libvirtAddr = "tcp://10.0.0.1:16509"
 
-func start(ctx context.Context, deps types.DepsFunc) error {
-	deps(destroy)
+func startKernel(ctx context.Context, deps types.DepsFunc) error {
+	deps(destroy, buildKernel)
 
+	return start(vm.KernelBoot(
+		hostPath(config.Output.Kernel),
+		hostPath(config.Output.Initramfs),
+	))
+}
+
+func startEFI(ctx context.Context, deps types.DepsFunc) error {
+	deps(destroy, buildEFI)
+
+	return start(vm.EFIBoot(hostPath(config.Output.EFI)))
+}
+
+func start(bootConfigurator vm.Configurator) error {
 	return cloudless.Start(libvirtAddr,
-		vnet.NAT("cloudless", "08:00:00:00:08:01", vnet.IPs("10.101.0.1/24")),
-		vnet.Isolated("cloudless2", "08:00:00:00:08:02", vnet.IPs("10.102.0.1/24")),
-		vm.Spec("test", 4, 2,
-			vm.EFIBoot(hostPath("bin/efi.img")),
-			vm.Network("cloudless", "vex0", "08:00:00:00:08:03"),
-			vm.Network("cloudless2", "vex1", "08:00:00:00:08:04"),
+		vnet.NAT("cloudless-igw", "02:00:00:00:00:01", vnet.IPs("10.101.0.1/24")),
+		vm.Spec("service", 4, 2,
+			bootConfigurator,
+			vm.Network("cloudless-igw", "vigw0", "02:00:00:00:00:02"),
+		),
+		vm.Spec("monitoring", 4, 2,
+			bootConfigurator,
+			vm.Network("cloudless-igw", "vigw1", "02:00:00:00:00:03"),
+			vm.Disk("monitoring", "vda", 20),
 		),
 	)
 }
@@ -91,8 +110,17 @@ func destroy(ctx context.Context, deps types.DepsFunc) error {
 func hostPath(path string) string {
 	return filepath.Join(
 		"/tank/vms/vm-go/home-wojciech",
-		lo.Must(filepath.Rel(lo.Must(os.UserHomeDir()), lo.Must(filepath.Abs(path)))),
+		lo.Must(filepath.Rel(lo.Must(os.UserHomeDir()), lo.Must(filepath.Abs(lo.Must(filepath.EvalSymlinks(path)))))),
 	)
+}
+
+func buildKernel(ctx context.Context, deps types.DepsFunc) error {
+	deps(buildInit)
+
+	if err := cloudless.BuildKernel(ctx, config); err != nil {
+		return err
+	}
+	return cloudless.BuildInitramfs(ctx, config)
 }
 
 func buildEFI(ctx context.Context, deps types.DepsFunc) error {
@@ -107,6 +135,6 @@ func buildInit(ctx context.Context, deps types.DepsFunc) error {
 	return golang.Build(ctx, deps, golang.BuildConfig{
 		Platform:      tools.PlatformLocal,
 		PackagePath:   "build/cmd/init",
-		BinOutputPath: initBinPath,
+		BinOutputPath: config.Input.InitBin,
 	})
 }

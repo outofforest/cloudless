@@ -65,6 +65,14 @@ func Service(repoRoot string, release uint64) host.Configurator {
 	)
 }
 
+// Mirrors defines container image mirrors.
+func Mirrors(mirrors ...string) host.Configurator {
+	return func(c *host.Configuration) error {
+		c.AddContainerMirrors(mirrors...)
+		return nil
+	}
+}
+
 func run(ctx context.Context, repoDir string, images []string) error {
 	if err := createRepo(ctx, repoDir, images); err != nil {
 		return err

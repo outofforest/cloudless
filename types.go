@@ -2,9 +2,21 @@ package cloudless
 
 // Config is the configuration of loader builder.
 type Config struct {
-	InitBinPath string
-	EFIPath     string
-	Distro      DistroConfig
+	Input  InputConfig
+	Output OutputConfig
+	Distro DistroConfig
+}
+
+// InputConfig stores paths to input files.
+type InputConfig struct {
+	InitBin string
+}
+
+// OutputConfig stores paths to output files.
+type OutputConfig struct {
+	EFI       string
+	Kernel    string
+	Initramfs string
 }
 
 // DistroConfig is the configuration of distro builder.

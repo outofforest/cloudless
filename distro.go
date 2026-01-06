@@ -45,33 +45,31 @@ const (
 
 //nolint:gocyclo
 func buildDistro(ctx context.Context, config DistroConfig) (retConfigDir string, retErr error) {
-	configMarshalled, err := json.MarshalIndent(config, "", "  ")
+	distroDir, err := distroDir(config)
 	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	configHash := sha256.Sum256(configMarshalled)
-	configDir := filepath.Join(lo.Must(os.UserCacheDir()), "cloudless/distros", hex.EncodeToString(configHash[:]))
-
-	if _, err := os.Stat(configDir); err == nil {
-		return configDir, nil
+		return "", err
 	}
 
-	configDirTmp := configDir + ".tmp"
-	initramfsPath := filepath.Join(configDirTmp, initramfsFile)
+	if _, err := os.Stat(distroDir); err == nil {
+		return distroDir, nil
+	}
+
+	distroDirTmp := distroDir + ".tmp"
+	initramfsPath := initramfsPath(distroDirTmp)
 
 	logger.Get(ctx).Info("Building distro")
 
-	if err := os.RemoveAll(configDirTmp); err != nil && !os.IsNotExist(err) {
+	if err := os.RemoveAll(distroDirTmp); err != nil && !os.IsNotExist(err) {
 		return "", errors.WithStack(err)
 	}
 
-	if err := os.MkdirAll(configDirTmp, 0o700); err != nil {
+	if err := os.MkdirAll(distroDirTmp, 0o700); err != nil {
 		return "", errors.WithStack(err)
 	}
 
 	defer func() {
 		if retErr != nil {
-			_ = os.RemoveAll(configDirTmp)
+			_ = os.RemoveAll(distroDirTmp)
 		}
 	}()
 
@@ -79,29 +77,29 @@ func buildDistro(ctx context.Context, config DistroConfig) (retConfigDir string,
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
-	configPath := filepath.Join(configDirTmp, configFile)
+	configPath := filepath.Join(distroDirTmp, configFile)
 
 	if err := os.WriteFile(configPath, configBytes, 0o600); err != nil {
 		return "", errors.WithStack(err)
 	}
 
-	efiPath := filepath.Join(configDirTmp, efiFile)
+	efiPath := filepath.Join(distroDirTmp, efiFile)
 	if err := downloadEFI(ctx, config.EFI, efiPath); err != nil {
 		return "", err
 	}
 
-	baseDistroPath := filepath.Join(configDirTmp, baseDistroFile)
+	baseDistroPath := filepath.Join(distroDirTmp, baseDistroFile)
 	if err := downloadBase(ctx, config.Base, baseDistroPath); err != nil {
 		return "", err
 	}
 
-	kernelPath := filepath.Join(configDirTmp, kernelFile)
+	kernelPath := kernelPath(distroDirTmp)
 	if err := downloadKernel(ctx, config.KernelPackage, kernelPath); err != nil {
 		return "", err
 	}
 
-	moduleDir := filepath.Join(configDirTmp, moduleDir)
-	depsPath := filepath.Join(configDirTmp, depsFile)
+	moduleDir := filepath.Join(distroDirTmp, moduleDir)
+	depsPath := filepath.Join(distroDirTmp, depsFile)
 	if err := downloadModules(ctx, config.KernelModulePackages, config.KernelModules,
 		moduleDir, depsPath); err != nil {
 		return "", err
@@ -113,7 +111,7 @@ func buildDistro(ctx context.Context, config DistroConfig) (retConfigDir string,
 	}
 	defer baseDistroF.Close()
 
-	distroPath := filepath.Join(configDirTmp, distroFile)
+	distroPath := filepath.Join(distroDirTmp, distroFile)
 	finalDistroF, err := os.OpenFile(distroPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", errors.WithStack(err)
@@ -257,11 +255,11 @@ loop:
 		return "", err
 	}
 
-	if err := os.Rename(configDirTmp, configDir); err != nil {
+	if err := os.Rename(distroDirTmp, distroDir); err != nil {
 		return "", errors.WithStack(err)
 	}
 
-	return configDir, nil
+	return distroDir, nil
 }
 
 func downloadEFI(ctx context.Context, efi EFI, path string) error {
@@ -636,6 +634,23 @@ func writeModule(name string, tw *tar.Writer, moduleDir string) error {
 
 	_, err = io.Copy(tw, mf)
 	return errors.WithStack(err)
+}
+
+func distroDir(config DistroConfig) (string, error) {
+	configMarshalled, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+	configHash := sha256.Sum256(configMarshalled)
+	return filepath.Join(lo.Must(os.UserCacheDir()), "cloudless/distros", hex.EncodeToString(configHash[:])), nil
+}
+
+func kernelPath(distroDir string) string {
+	return filepath.Join(distroDir, kernelFile)
+}
+
+func initramfsPath(distroDir string) string {
+	return filepath.Join(distroDir, initramfsFile)
 }
 
 func packageURL(p Package) string {

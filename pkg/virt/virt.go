@@ -13,6 +13,9 @@ import (
 	"github.com/outofforest/parallel"
 )
 
+// StoragePoolName is the name of storage pool.
+const StoragePoolName = "cloudless"
+
 // DecideFunc defines function which decides if resource should be stopped.
 type DecideFunc func(xml string) bool
 
@@ -21,8 +24,8 @@ func StopDev(xml string) bool {
 	return strings.Contains(xml, "<cloudless:cloudless")
 }
 
-// StopVMs stops vms.
-func StopVMs(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc) error {
+// DestroyVMs destroys vms.
+func DestroyVMs(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc) error {
 	domains, _, err := l.ConnectListAllDomains(1,
 		libvirt.ConnectListDomainsActive|libvirt.ConnectListDomainsInactive)
 	if err != nil {
@@ -47,7 +50,7 @@ func StopVMs(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc) erro
 				for trial := 0; ; trial++ {
 					active, err := l.DomainIsActive(d)
 					if err != nil {
-						if libvirt.IsNotFound(err) {
+						if IsError(err, libvirt.ErrNoDomain) {
 							return nil
 						}
 						return errors.WithStack(err)
@@ -57,7 +60,7 @@ func StopVMs(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc) erro
 						err := l.DomainUndefineFlags(d, libvirt.DomainUndefineManagedSave|
 							libvirt.DomainUndefineSnapshotsMetadata|libvirt.DomainUndefineNvram|
 							libvirt.DomainUndefineCheckpointsMetadata)
-						if err == nil || libvirt.IsNotFound(err) {
+						if err == nil || IsError(err, libvirt.ErrNoDomain) {
 							return nil
 						}
 						return errors.WithStack(err)
@@ -70,7 +73,7 @@ func StopVMs(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc) erro
 							log.Info("VM is still running", zap.String("vm", d.Name))
 						}
 						<-time.After(time.Second)
-					case libvirt.IsNotFound(err):
+					case IsError(err, libvirt.ErrNoDomain):
 						return nil
 					default:
 						return errors.WithStack(err)
@@ -83,8 +86,58 @@ func StopVMs(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc) erro
 	})
 }
 
-// StopNetworks stops networks.
-func StopNetworks(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc) error {
+// DestroyStoragePool destroys storage pool.
+func DestroyStoragePool(l *libvirt.Libvirt) error {
+	pool, err := l.StoragePoolLookupByName(StoragePoolName)
+	switch {
+	case err == nil:
+	case IsError(err, libvirt.ErrNoStoragePool):
+		return nil
+	default:
+		return errors.WithStack(err)
+	}
+
+	vols, _, err := l.StoragePoolListAllVolumes(pool, 1, 0)
+	if err != nil {
+		if IsError(err, libvirt.ErrNoStoragePool) {
+			return nil
+		}
+		return errors.WithStack(err)
+	}
+	for _, v := range vols {
+		if err := l.StorageVolDelete(v, libvirt.StorageVolDeleteNormal); err != nil &&
+			!IsError(err, libvirt.ErrNoStorageVol) {
+			return errors.WithStack(err)
+		}
+	}
+
+	err = l.StoragePoolDestroy(pool)
+	switch {
+	case err == nil:
+	case IsError(err, libvirt.ErrNoStoragePool):
+		return nil
+	default:
+		return errors.WithStack(err)
+	}
+
+	err = l.StoragePoolDelete(pool, libvirt.StoragePoolDeleteNormal)
+	if err != nil {
+		if IsError(err, libvirt.ErrNoStoragePool) {
+			return nil
+		}
+		return errors.WithStack(err)
+	}
+
+	err = l.StoragePoolUndefine(pool)
+	if err != nil && !IsError(err, libvirt.ErrNoStoragePool) {
+		return errors.WithStack(err)
+	}
+
+	return nil
+}
+
+// DestroyNetworks destroys networks.
+func DestroyNetworks(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc) error {
 	networks, _, err := l.ConnectListAllNetworks(1,
 		libvirt.ConnectListNetworksActive|libvirt.ConnectListNetworksInactive)
 	if err != nil {
@@ -109,7 +162,7 @@ func StopNetworks(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc)
 				for trial := 0; ; trial++ {
 					active, err := l.NetworkIsActive(n)
 					if err != nil {
-						if libvirt.IsNotFound(err) {
+						if IsError(err, libvirt.ErrNoNetwork) {
 							return nil
 						}
 						return errors.WithStack(err)
@@ -117,7 +170,7 @@ func StopNetworks(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc)
 
 					if active == 0 {
 						err := l.NetworkUndefine(n)
-						if err == nil || libvirt.IsNotFound(err) {
+						if err == nil || IsError(err, libvirt.ErrNoNetwork) {
 							return nil
 						}
 						return errors.WithStack(err)
@@ -130,7 +183,7 @@ func StopNetworks(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc)
 							log.Info("Network is still running", zap.String("network", n.Name))
 						}
 						<-time.After(time.Second)
-					case libvirt.IsNotFound(err):
+					case IsError(err, libvirt.ErrNoNetwork):
 						return nil
 					default:
 						return errors.WithStack(err)
@@ -141,4 +194,13 @@ func StopNetworks(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc)
 
 		return nil
 	})
+}
+
+// IsError checks if error is a particular libvirt error.
+func IsError(err error, expectedError libvirt.ErrorNumber) bool {
+	var virtErr libvirt.Error
+	if errors.As(err, &virtErr) {
+		return virtErr.Code == uint32(expectedError)
+	}
+	return false
 }
