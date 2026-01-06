@@ -2,10 +2,16 @@ package build
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+
+	"github.com/samber/lo"
 
 	"github.com/outofforest/build/v2/pkg/tools"
 	"github.com/outofforest/build/v2/pkg/types"
 	"github.com/outofforest/cloudless"
+	"github.com/outofforest/cloudless/pkg/vm"
+	"github.com/outofforest/cloudless/pkg/vnet"
 	"github.com/outofforest/tools/pkg/tools/golang"
 )
 
@@ -60,6 +66,33 @@ var config = cloudless.Config{
 			"nft-chain-nat",
 		},
 	},
+}
+
+const libvirtAddr = "tcp://10.0.0.1:16509"
+
+func start(ctx context.Context, deps types.DepsFunc) error {
+	deps(destroy)
+
+	return cloudless.Start(libvirtAddr,
+		vnet.NAT("cloudless", "08:00:00:00:08:01", vnet.IPs("10.101.0.1/24")),
+		vnet.Isolated("cloudless2", "08:00:00:00:08:02", vnet.IPs("10.102.0.1/24")),
+		vm.Spec("test", 4, 2,
+			vm.EFIBoot(hostPath("bin/efi.img")),
+			vm.Network("cloudless", "vex0", "08:00:00:00:08:03"),
+			vm.Network("cloudless2", "vex1", "08:00:00:00:08:04"),
+		),
+	)
+}
+
+func destroy(ctx context.Context, deps types.DepsFunc) error {
+	return cloudless.Destroy(ctx, libvirtAddr)
+}
+
+func hostPath(path string) string {
+	return filepath.Join(
+		"/tank/vms/vm-go/home-wojciech",
+		lo.Must(filepath.Rel(lo.Must(os.UserHomeDir()), lo.Must(filepath.Abs(path)))),
+	)
 }
 
 func buildEFI(ctx context.Context, deps types.DepsFunc) error {

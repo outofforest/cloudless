@@ -1,0 +1,18 @@
+<network>
+    <metadata>
+        <cloudless:cloudless xmlns:cloudless="http://go.exw.co/cloudless" />
+    </metadata>
+    <name>{{ .Name }}</name>
+{{ if .ForwardMode }}
+    <forward mode="{{ .ForwardMode }}"/>
+{{ end }}
+{{ if .MAC }}
+    <mac address="{{ .MAC }}"/>
+{{ end }}
+{{ if .IP4 }}
+    <ip address="{{ .IP4 }}" netmask="{{ .IP4Mask }}"/>
+{{ end }}
+{{ if .IP6 }}
+    <ip family="ipv6" address="{{ .IP6 }}" prefix="{{ .IP6Prefix }}"/>
+{{ end }}
+</network>

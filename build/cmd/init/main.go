@@ -86,6 +86,15 @@ var (
 var deployment = Deployment(
 	ImmediateKernelModules(DefaultKernelModules...),
 	DNS(DefaultDNS...),
+	Box("example",
+		Network("08:00:00:00:08:03", "igw", IPs("10.101.0.155/24")),
+		Network("08:00:00:00:08:04", "iint", IPs("10.102.0.155/24")),
+		Gateway("10.101.0.1"),
+		acpi.PowerService(),
+		ntp.Service(),
+		shield.Open("tcp4", "igw", ssh.Port),
+		ssh.Service("AAAAC3NzaC1lZDI1NTE5AAAAIEcJvvtOBgTsm3mq3Sg8cjn6Mz/vC9f3k6a89ZOjIyF6"),
+	),
 	Host("pxe",
 		Gateway("10.0.0.1"),
 		Network("02:00:00:00:01:01", "igw", IPs("10.0.0.100/24", "fe80::1/10")),
@@ -120,8 +129,8 @@ var deployment = Deployment(
 		shield.Forward("brdns", "brmon"),
 		shield.Expose("udp", "93.179.253.130", dns.Port, "10.0.3.2", dns.Port),
 		shield.Expose("udp", "93.179.253.131", dns.Port, "10.0.3.3", dns.Port),
-		vm.New("dns01", 2, 2, vm.Network("brdns", "vdns01", "02:00:00:00:03:02")),
-		vm.New("dns02", 2, 2, vm.Network("brdns", "vdns02", "02:00:00:00:03:03")),
+		vm.New("dns01", 2, 2, vm.Bridge("brdns", "vdns01", "02:00:00:00:03:02")),
+		vm.New("dns02", 2, 2, vm.Bridge("brdns", "vdns02", "02:00:00:00:03:03")),
 
 		// Ingress.
 		Bridge("bringress", "02:00:00:00:09:01", IPs("10.0.6.1/24")),
@@ -136,7 +145,7 @@ var deployment = Deployment(
 		Bridge("brmon", "02:00:00:00:04:01", IPs("10.0.1.1/24")),
 		shield.Masquerade("brmon", "igw"),
 		shield.Masquerade("brmon", "iint"),
-		vm.New("monitoring", 5, 4, vm.Network("brmon", "vmon", "02:00:00:00:04:02")),
+		vm.New("monitoring", 5, 4, vm.Bridge("brmon", "vmon", "02:00:00:00:04:02")),
 
 		// ACME.
 		Bridge("bracme", "02:00:00:00:05:01", IPs("10.0.2.1/24")),

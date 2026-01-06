@@ -67,11 +67,9 @@ func HostRoot() error {
 	if err := TmpFS("/newroot"); err != nil {
 		return err
 	}
-
 	if err := os.Chdir("/newroot"); err != nil {
 		return errors.WithStack(err)
 	}
-
 	if err := os.MkdirAll("/newroot/oldroot", 0o700); err != nil {
 		return errors.WithStack(err)
 	}
@@ -84,11 +82,9 @@ func HostRoot() error {
 	if err := syscall.Chroot("."); err != nil {
 		return errors.WithStack(err)
 	}
-
 	if err := untarDistro(); err != nil {
 		return err
 	}
-
 	if err := os.MkdirAll("/root", 0o750); err != nil {
 		return errors.WithStack(err)
 	}

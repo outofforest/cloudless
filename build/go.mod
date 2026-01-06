@@ -5,9 +5,10 @@ go 1.25
 replace github.com/outofforest/cloudless => ../
 
 require (
-	github.com/outofforest/build/v2 v2.6.1
+	github.com/outofforest/build/v2 v2.6.2
 	github.com/outofforest/cloudless v0.0.0
 	github.com/outofforest/tools v1.4.3
+	github.com/samber/lo v1.50.0
 )
 
 require (
@@ -61,7 +62,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
-	github.com/outofforest/archive v0.4.0 // indirect
+	github.com/outofforest/archive v0.5.0 // indirect
 	github.com/outofforest/ioc/v2 v2.5.2 // indirect
 	github.com/outofforest/libexec v0.3.9 // indirect
 	github.com/outofforest/logger v0.6.0 // indirect
@@ -84,7 +85,6 @@ require (
 	github.com/prometheus/prometheus v0.301.0 // indirect
 	github.com/prometheus/sigv4 v0.1.2 // indirect
 	github.com/ridge/must v0.6.0 // indirect
-	github.com/samber/lo v1.50.0 // indirect
 	github.com/sassoftware/go-rpmutils v0.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.4-0.20230606125235-dd1b4c2e81af // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
