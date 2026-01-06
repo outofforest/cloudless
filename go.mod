@@ -16,6 +16,8 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/mdlayher/genetlink v1.3.2
 	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42
+	github.com/outofforest/archive v0.4.0
+	github.com/outofforest/build/v2 v2.6.1
 	github.com/outofforest/libexec v0.3.9
 	github.com/outofforest/logger v0.6.0
 	github.com/outofforest/mass v0.2.1
@@ -23,6 +25,7 @@ require (
 	github.com/outofforest/proton v0.15.0
 	github.com/outofforest/resonance v0.21.0
 	github.com/outofforest/run v0.8.0
+	github.com/outofforest/tools v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.7
 	github.com/prometheus/client_golang v1.21.0
@@ -30,7 +33,9 @@ require (
 	github.com/prometheus/prometheus v0.301.0
 	github.com/ridge/must v0.6.0
 	github.com/samber/lo v1.50.0
+	github.com/sassoftware/go-rpmutils v0.4.0
 	github.com/stretchr/testify v1.10.0
+	github.com/ulikunitz/xz v0.5.15
 	github.com/vishvananda/netlink v1.3.0
 	github.com/wneessen/go-mail v0.6.2
 	github.com/wneessen/go-mail-middleware v0.0.9
@@ -48,10 +53,13 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.8.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.4.0 // indirect
+	github.com/DataDog/zstd v1.5.5 // indirect
+	github.com/ProtonMail/go-crypto v1.1.3 // indirect
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b // indirect
 	github.com/aws/aws-sdk-go v1.55.6 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/cloudflare/circl v1.3.8 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dennwc/varint v1.0.0 // indirect
 	github.com/djherbis/times v1.6.0 // indirect
@@ -89,8 +97,8 @@ require (
 	github.com/prometheus/sigv4 v0.1.2 // indirect
 	github.com/sirupsen/logrus v1.9.4-0.20230606125235-dd1b4c2e81af // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
-	github.com/ulikunitz/xz v0.5.12 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
+	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/collector/pdata v1.26.0 // indirect
 	go.opentelemetry.io/collector/semconv v0.120.0 // indirect

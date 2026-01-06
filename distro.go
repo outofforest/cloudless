@@ -1,8 +1,7 @@
-package build
+package cloudless
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -22,13 +21,17 @@ import (
 	"github.com/samber/lo"
 	"github.com/sassoftware/go-rpmutils"
 	"github.com/ulikunitz/xz"
+	"go.uber.org/zap"
 
+	"github.com/outofforest/archive"
 	"github.com/outofforest/logger"
 )
 
 const (
+	efiURL           = "https://github.com/outofforest/efi/archive/refs/tags/%s.tar.gz"
 	repoURL          = "http://mirror.slu.cz/fedora/linux/updates/43/Everything/x86_64/Packages/k/"
 	configFile       = "config.json"
+	efiFile          = "efi.tar.gz"
 	baseDistroFile   = "distro.base.tar"
 	distroFile       = "distro.tar"
 	initramfsFile    = "initramfs"
@@ -41,55 +44,64 @@ const (
 )
 
 //nolint:gocyclo
-func buildDistro(ctx context.Context, config DistroConfig) (string, error) {
+func buildDistro(ctx context.Context, config DistroConfig) (retConfigDir string, retErr error) {
 	configMarshalled, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
 	configHash := sha256.Sum256(configMarshalled)
 	configDir := filepath.Join(lo.Must(os.UserCacheDir()), "cloudless/distros", hex.EncodeToString(configHash[:]))
-	initramfsPath := filepath.Join(configDir, initramfsFile)
 
-	if _, err := os.Stat(initramfsPath); err == nil {
+	if _, err := os.Stat(configDir); err == nil {
 		return configDir, nil
 	}
 
+	configDirTmp := configDir + ".tmp"
+	initramfsPath := filepath.Join(configDirTmp, initramfsFile)
+
 	logger.Get(ctx).Info("Building distro")
 
-	if err := os.RemoveAll(configDir); err != nil {
+	if err := os.RemoveAll(configDirTmp); err != nil && !os.IsNotExist(err) {
 		return "", errors.WithStack(err)
 	}
 
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
+	if err := os.MkdirAll(configDirTmp, 0o700); err != nil {
 		return "", errors.WithStack(err)
 	}
+
+	defer func() {
+		if retErr != nil {
+			_ = os.RemoveAll(configDirTmp)
+		}
+	}()
 
 	configBytes, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
-	configPath := filepath.Join(configDir, configFile)
-	configPathTmp := configPath + ".tmp"
+	configPath := filepath.Join(configDirTmp, configFile)
 
-	if err := os.WriteFile(configPathTmp, configBytes, 0o600); err != nil {
-		return "", errors.WithStack(err)
-	}
-	if err := os.Rename(configPathTmp, configPath); err != nil {
+	if err := os.WriteFile(configPath, configBytes, 0o600); err != nil {
 		return "", errors.WithStack(err)
 	}
 
-	baseDistroPath := filepath.Join(configDir, baseDistroFile)
-	if err := downloadDistro(ctx, config.Base, baseDistroPath); err != nil {
+	efiPath := filepath.Join(configDirTmp, efiFile)
+	if err := downloadEFI(ctx, config.EFI, efiPath); err != nil {
 		return "", err
 	}
 
-	kernelPath := filepath.Join(configDir, kernelFile)
+	baseDistroPath := filepath.Join(configDirTmp, baseDistroFile)
+	if err := downloadBase(ctx, config.Base, baseDistroPath); err != nil {
+		return "", err
+	}
+
+	kernelPath := filepath.Join(configDirTmp, kernelFile)
 	if err := downloadKernel(ctx, config.KernelPackage, kernelPath); err != nil {
 		return "", err
 	}
 
-	moduleDir := filepath.Join(configDir, moduleDir)
-	depsPath := filepath.Join(configDir, depsFile)
+	moduleDir := filepath.Join(configDirTmp, moduleDir)
+	depsPath := filepath.Join(configDirTmp, depsFile)
 	if err := downloadModules(ctx, config.KernelModulePackages, config.KernelModules,
 		moduleDir, depsPath); err != nil {
 		return "", err
@@ -101,9 +113,8 @@ func buildDistro(ctx context.Context, config DistroConfig) (string, error) {
 	}
 	defer baseDistroF.Close()
 
-	distroPath := filepath.Join(configDir, distroFile)
-	distroPathTmp := distroPath + ".tmp"
-	finalDistroF, err := os.OpenFile(distroPathTmp, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	distroPath := filepath.Join(configDirTmp, distroFile)
+	finalDistroF, err := os.OpenFile(distroPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
@@ -230,12 +241,7 @@ loop:
 		return "", errors.WithStack(err)
 	}
 
-	if err := os.Rename(distroPathTmp, distroPath); err != nil {
-		return "", errors.WithStack(err)
-	}
-
-	initramfsPathTmp := initramfsPath + ".tmp"
-	initramfsF, err := os.OpenFile(initramfsPathTmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	initramfsF, err := os.OpenFile(initramfsPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
@@ -250,19 +256,25 @@ loop:
 	if err := addFile(w, 0o600, distroPath); err != nil {
 		return "", err
 	}
-	if err := os.Rename(initramfsPathTmp, initramfsPath); err != nil {
+
+	if err := os.Rename(configDirTmp, configDir); err != nil {
 		return "", errors.WithStack(err)
 	}
 
 	return configDir, nil
 }
 
-func downloadDistro(ctx context.Context, distro Base, path string) error {
+func downloadEFI(ctx context.Context, efi EFI, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return errors.WithStack(err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, distro.URL, nil)
+	efiURL := fmt.Sprintf(efiURL, efi.Version)
+
+	log := logger.Get(ctx)
+	log.Info("Downloading EFI", zap.String("url", efiURL))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, efiURL, nil)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -272,17 +284,59 @@ func downloadDistro(ctx context.Context, distro Base, path string) error {
 	}
 	defer resp.Body.Close()
 
-	pathTmp := path + ".tmp"
-	initramfsF, err := os.OpenFile(pathTmp, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o600)
+	efiF, err := os.OpenFile(path, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer efiF.Close()
+
+	reader, err := archive.NewHashingReader(resp.Body, efi.Hash)
+	if err != nil {
+		return errors.Wrapf(err, "creating hasher failed for efi %q", efiURL)
+	}
+
+	if _, err := io.Copy(efiF, reader); err != nil {
+		return errors.WithStack(err)
+	}
+
+	if err := reader.ValidateChecksum(); err != nil {
+		return errors.Wrap(err, "efi checksum mismatch")
+	}
+
+	return nil
+}
+
+func downloadBase(ctx context.Context, base Base, path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return errors.WithStack(err)
+	}
+
+	log := logger.Get(ctx)
+	log.Info("Downloading distro base", zap.String("url", base.URL))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base.URL, nil)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer resp.Body.Close()
+
+	initramfsF, err := os.OpenFile(path, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	defer initramfsF.Close()
 
-	hasher := sha256.New()
+	reader, err := archive.NewHashingReader(resp.Body, base.Hash)
+	if err != nil {
+		return errors.Wrapf(err, "creating hasher failed for distro base %q", base.URL)
+	}
 
 	// Fedora .tar files are .tar.gz in reality.
-	gr, err := gzip.NewReader(io.TeeReader(resp.Body, hasher))
+	gr, err := gzip.NewReader(reader)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -292,12 +346,11 @@ func downloadDistro(ctx context.Context, distro Base, path string) error {
 		return errors.WithStack(err)
 	}
 
-	checksum := hex.EncodeToString(hasher.Sum(nil))
-	if checksum != distro.SHA256 {
-		return errors.Errorf("distro base checksum mismatch, expected: %q, got: %q", distro.SHA256, checksum)
+	if err := reader.ValidateChecksum(); err != nil {
+		return errors.Wrap(err, "distro base checksum mismatch")
 	}
 
-	return errors.WithStack(os.Rename(pathTmp, path))
+	return nil
 }
 
 func downloadKernel(ctx context.Context, kernelPackage Package, path string) error {
@@ -306,6 +359,10 @@ func downloadKernel(ctx context.Context, kernelPackage Package, path string) err
 	}
 
 	kernelPackageURL := packageURL(kernelPackage)
+
+	log := logger.Get(ctx)
+	log.Info("Downloading kernel module", zap.String("url", kernelPackageURL))
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, kernelPackageURL, nil)
 	if err != nil {
 		return errors.WithStack(err)
@@ -316,14 +373,16 @@ func downloadKernel(ctx context.Context, kernelPackage Package, path string) err
 	}
 	defer resp.Body.Close()
 
-	hasher := sha256.New()
-	buf := &bytes.Buffer{}
-
-	rpm, err := rpmutils.ReadRpm(io.TeeReader(io.TeeReader(resp.Body, buf), hasher))
+	reader, err := archive.NewHashingReader(resp.Body, kernelPackage.Hash)
 	if err != nil {
-		fmt.Println(buf.String())
+		return errors.Wrapf(err, "creating hasher failed for package %q", kernelPackage.Name)
+	}
+
+	rpm, err := rpmutils.ReadRpm(reader)
+	if err != nil {
 		return errors.Wrapf(err, "failed reading RPM package %s", kernelPackageURL)
 	}
+
 	pReader, err := rpm.PayloadReaderExtended()
 	if err != nil {
 		return errors.WithStack(err)
@@ -344,8 +403,7 @@ func downloadKernel(ctx context.Context, kernelPackage Package, path string) err
 		}
 	}
 
-	pathTmp := path + ".tmp"
-	vmlinuzF, err := os.OpenFile(pathTmp, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o700)
+	vmlinuzF, err := os.OpenFile(path, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o700)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -355,17 +413,11 @@ func downloadKernel(ctx context.Context, kernelPackage Package, path string) err
 		return errors.WithStack(err)
 	}
 
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		return errors.WithStack(err)
+	if err := reader.ValidateChecksum(); err != nil {
+		return errors.Wrapf(err, "rpm checksum mismatch, url: %q", kernelPackageURL)
 	}
 
-	checksum := hex.EncodeToString(hasher.Sum(nil))
-	if checksum != kernelPackage.SHA256 {
-		return errors.Errorf("rpm %q checksum mismatch, expected: %q, got: %q", kernelPackageURL,
-			kernelPackage.SHA256, checksum)
-	}
-
-	return errors.WithStack(os.Rename(pathTmp, path))
+	return nil
 }
 
 func downloadModules(ctx context.Context, packages []Package, modules []string, moduleDir, depsFile string) error {
@@ -376,73 +428,9 @@ func downloadModules(ctx context.Context, packages []Package, modules []string, 
 	providers := map[string]string{}
 	requires := map[string][]string{}
 
-	for _, p := range packages {
-		mURL := packageURL(p)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, mURL, nil)
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		defer resp.Body.Close()
-
-		hasher := sha256.New()
-
-		rpm, err := rpmutils.ReadRpm(io.TeeReader(resp.Body, hasher))
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		pReader, err := rpm.PayloadReaderExtended()
-		if err != nil {
-			return errors.WithStack(err)
-		}
-
-	loop:
-		for {
-			fInfo, err := pReader.Next()
-			switch {
-			case err == nil:
-			case errors.Is(err, io.EOF):
-				break loop
-			default:
-				return errors.WithStack(err)
-			}
-
-			if !strings.HasPrefix(fInfo.Name(), modulePathPrefix) {
-				continue
-			}
-
-			fileName := filepath.Base(fInfo.Name())
-			if !strings.HasSuffix(fileName, ".ko.xz") || pReader.IsLink() {
-				continue
-			}
-
-			moduleName, providedSymbols, importedSymbols, err := storeModule(fileName, pReader, moduleDir)
-			if err != nil {
-				return err
-			}
-
-			if len(importedSymbols) > 0 {
-				requires[moduleName] = importedSymbols
-			}
-			for _, s := range providedSymbols {
-				if _, exists := providers[s]; exists {
-					providers[s] = ""
-				} else {
-					providers[s] = moduleName
-				}
-			}
-		}
-
-		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-			return errors.WithStack(err)
-		}
-
-		checksum := hex.EncodeToString(hasher.Sum(nil))
-		if checksum != p.SHA256 {
-			return errors.Errorf("rpm %q checksum mismatch, expected: %q, got: %q", mURL, p.SHA256, checksum)
+	for _, pkg := range packages {
+		if err := downloadModulesFromPackage(ctx, pkg, moduleDir, providers, requires); err != nil {
+			return err
 		}
 	}
 
@@ -483,14 +471,87 @@ func downloadModules(ctx context.Context, packages []Package, modules []string, 
 		}
 	}
 
-	depsFileTmp := depsFile + ".tmp"
+	return errors.WithStack(os.WriteFile(depsFile, lo.Must(json.MarshalIndent(finalDependencies, "", "  ")), 0o600))
+}
 
-	if err := errors.WithStack(os.WriteFile(depsFileTmp,
-		lo.Must(json.MarshalIndent(finalDependencies, "", "  ")), 0o600)); err != nil {
+func downloadModulesFromPackage(
+	ctx context.Context,
+	pkg Package,
+	moduleDir string,
+	providers map[string]string,
+	requires map[string][]string,
+) error {
+	mURL := packageURL(pkg)
+
+	log := logger.Get(ctx)
+	log.Info("Downloading module", zap.String("url", mURL))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mURL, nil)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer resp.Body.Close()
+
+	reader, err := archive.NewHashingReader(resp.Body, pkg.Hash)
+	if err != nil {
+		return errors.Wrapf(err, "creating hasher failed for package %q", pkg.Name)
+	}
+
+	rpm, err := rpmutils.ReadRpm(reader)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	pReader, err := rpm.PayloadReaderExtended()
+	if err != nil {
 		return errors.WithStack(err)
 	}
 
-	return errors.WithStack(os.Rename(depsFileTmp, depsFile))
+loop:
+	for {
+		fInfo, err := pReader.Next()
+		switch {
+		case err == nil:
+		case errors.Is(err, io.EOF):
+			break loop
+		default:
+			return errors.WithStack(err)
+		}
+
+		if !strings.HasPrefix(fInfo.Name(), modulePathPrefix) {
+			continue
+		}
+
+		fileName := filepath.Base(fInfo.Name())
+		if !strings.HasSuffix(fileName, ".ko.xz") || pReader.IsLink() {
+			continue
+		}
+
+		moduleName, providedSymbols, importedSymbols, err := storeModule(fileName, pReader, moduleDir)
+		if err != nil {
+			return err
+		}
+
+		if len(importedSymbols) > 0 {
+			requires[moduleName] = importedSymbols
+		}
+		for _, s := range providedSymbols {
+			if _, exists := providers[s]; exists {
+				providers[s] = ""
+			} else {
+				providers[s] = moduleName
+			}
+		}
+	}
+
+	if err := reader.ValidateChecksum(); err != nil {
+		return errors.Wrapf(err, "rpm checksum mismatch, url: %q", mURL)
+	}
+
+	return nil
 }
 
 func storeModule(fileName string, r io.Reader, moduleDir string) (string, []string, []string, error) {
@@ -502,8 +563,7 @@ func storeModule(fileName string, r io.Reader, moduleDir string) (string, []stri
 	fileName = strings.ReplaceAll(strings.TrimSuffix(fileName, ".xz"), "_", "-")
 	moduleName := strings.TrimSuffix(fileName, ".ko")
 	modulePath := filepath.Join(moduleDir, fileName)
-	modulePathTmp := modulePath + ".tmp"
-	modF, err := os.OpenFile(modulePathTmp, os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0o600)
+	modF, err := os.OpenFile(modulePath, os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return "", nil, nil, errors.WithStack(err)
 	}
@@ -542,10 +602,6 @@ func storeModule(fileName string, r io.Reader, moduleDir string) (string, []stri
 		default:
 			providedSymbols = append(providedSymbols, s.Name)
 		}
-	}
-
-	if err := os.Rename(modulePathTmp, modulePath); err != nil {
-		return "", nil, nil, errors.WithStack(err)
 	}
 
 	return moduleName, providedSymbols, importedSymbols, nil
