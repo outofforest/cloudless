@@ -26,12 +26,12 @@ const (
 	timeout        = time.Second
 )
 
-// UploadService returns new prometheus metric uploader service.
-func UploadService(prometheusURL string) host.Configurator {
+// SendMetrics returns new prometheus metric uploader service.
+func SendMetrics(prometheusURL string) host.Configurator {
 	var c host.SealedConfiguration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
-		cloudless.Service("eye", parallel.Fail, func(ctx context.Context) error {
+		cloudless.Service("eye-metrics", parallel.Fail, func(ctx context.Context) error {
 			log := logger.Get(ctx)
 			standardLabels := []prompb.Label{
 				{
