@@ -27,7 +27,7 @@ var collectors = []func() (string, prometheus.Gatherer, parallel.Task){
 }
 
 // CollectService returns new service collecting system metrics.
-func CollectService() host.Configurator {
+func SystemMonitor() host.Configurator {
 	gatherers := make([]prometheus.Gatherer, 0, len(collectors))
 	tasks := make([]task, 0, len(collectors))
 	for _, c := range collectors {

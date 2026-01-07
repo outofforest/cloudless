@@ -39,20 +39,20 @@ const (
 var (
 	// Host configures hosts.
 	Host = BoxFactory(
-		eye.UploadService("http://10.0.4.3:80"),
-		RemoteLogging("http://10.0.4.4:80"),
+		eye.SendMetrics("http://10.0.4.3:80"),
+		eye.RemoteLogging("http://10.0.4.4:80"),
 		yum.Mirrors("http://10.0.0.100"),
 		acpi.PowerService(),
 		ntp.Service(),
-		eye.CollectService(),
+		eye.SystemMonitor(),
 		shield.Open("tcp4", "igw", ssh.Port),
 		ssh.Service("AAAAC3NzaC1lZDI1NTE5AAAAIEcJvvtOBgTsm3mq3Sg8cjn6Mz/vC9f3k6a89ZOjIyF6"),
 	)
 
 	// Container configures containers.
 	Container = BoxFactory(
-		eye.UploadService("http://10.0.4.3:80"),
-		RemoteLogging("http://10.0.4.4:80"),
+		eye.SendMetrics("http://10.0.4.3:80"),
+		eye.RemoteLogging("http://10.0.4.4:80"),
 		containercache.Mirrors("http://10.0.0.100:81"),
 	)
 
