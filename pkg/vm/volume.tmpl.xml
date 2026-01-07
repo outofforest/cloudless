@@ -1,5 +1,5 @@
 <volume>
-    <name>{{ .Name }}.qcow2</name>
+    <name>{{ .Name }}</name>
     <capacity>{{ .Size }}</capacity>
     <allocation>0</allocation>
     <target>

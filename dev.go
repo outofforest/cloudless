@@ -33,6 +33,19 @@ func Start(libvirtAddr string, sources ...dev.SpecSource) error {
 	return nil
 }
 
+// Stop stops dev environment.
+func Stop(ctx context.Context, libvirtAddr string) error {
+	l, err := libvirtConn(libvirtAddr)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	if err := virt.DestroyVMs(ctx, l, virt.StopDev); err != nil {
+		return err
+	}
+	return virt.DestroyNetworks(ctx, l, virt.StopDev)
+}
+
 // Destroy destroys dev environment.
 func Destroy(ctx context.Context, libvirtAddr string) error {
 	l, err := libvirtConn(libvirtAddr)

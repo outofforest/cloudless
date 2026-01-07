@@ -74,7 +74,7 @@ var config = cloudless.Config{
 const libvirtAddr = "tcp://10.0.0.1:16509"
 
 func startKernel(ctx context.Context, deps types.DepsFunc) error {
-	deps(destroy, buildKernel)
+	deps(stop, buildKernel)
 
 	return start(vm.KernelBoot(
 		hostPath(config.Output.Kernel),
@@ -83,7 +83,7 @@ func startKernel(ctx context.Context, deps types.DepsFunc) error {
 }
 
 func startEFI(ctx context.Context, deps types.DepsFunc) error {
-	deps(destroy, buildEFI)
+	deps(stop, buildEFI)
 
 	return start(vm.EFIBoot(hostPath(config.Output.EFI)))
 }
@@ -101,6 +101,10 @@ func start(bootConfigurator vm.Configurator) error {
 			vm.Disk("monitoring", "vda", 20),
 		),
 	)
+}
+
+func stop(ctx context.Context, deps types.DepsFunc) error {
+	return cloudless.Stop(ctx, libvirtAddr)
 }
 
 func destroy(ctx context.Context, deps types.DepsFunc) error {
