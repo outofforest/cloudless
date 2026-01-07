@@ -141,20 +141,49 @@ func RunImage(imageTag string, configurators ...RunImageConfigurator) host.Confi
 			}
 
 			log := logger.Get(ctx)
-			mirrors := c.ContainerMirrors()
 
-			if err := wait.HTTP(ctx, mirrors...); err != nil {
-				return err
-			}
+			icFileName := strings.ReplaceAll(imageTag, "/", "-")
+			var ic imageConfig
+			icRaw, err := os.ReadFile(icFileName)
+			switch {
+			case err == nil:
+				if err := json.Unmarshal(icRaw, &ic); err != nil {
+					return errors.WithStack(err)
+				}
+			case !os.IsNotExist(err):
+				return errors.WithStack(err)
+			default:
+				mirrors := c.ContainerMirrors()
 
-			m, err := fetchManifest(ctx, imageTag, mirrors)
-			if err != nil {
-				return err
-			}
+				if err := wait.HTTP(ctx, mirrors...); err != nil {
+					return err
+				}
 
-			ic, err := fetchConfig(ctx, imageTag, m, mirrors)
-			if err != nil {
-				return err
+				m, err := fetchManifest(ctx, imageTag, mirrors)
+				if err != nil {
+					return err
+				}
+
+				ic, err = fetchConfig(ctx, imageTag, m, mirrors)
+				if err != nil {
+					return err
+				}
+
+				if err := inflateImage(ctx, imageTag, m, mirrors); err != nil {
+					return err
+				}
+
+				if icRaw, err = json.Marshal(ic); err != nil {
+					return errors.WithStack(err)
+				}
+
+				icFileNameTmp := icFileName + ".tmp"
+				if err := os.WriteFile(icFileNameTmp, icRaw, 0o600); err != nil {
+					return errors.WithStack(err)
+				}
+				if err := os.Rename(icFileNameTmp, icFileName); err != nil {
+					return errors.WithStack(err)
+				}
 			}
 
 			config := RunImageConfig{
@@ -194,10 +223,6 @@ func RunImage(imageTag string, configurators ...RunImageConfigurator) host.Confi
 			envVars := make([]string, 0, len(config.EnvVars))
 			for k, v := range config.EnvVars {
 				envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
-			}
-
-			if err := inflateImage(ctx, imageTag, m, c.ContainerMirrors()); err != nil {
-				return err
 			}
 
 			stdoutLogger := newStreamLogger(log)
