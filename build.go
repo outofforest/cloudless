@@ -62,12 +62,11 @@ func BuildEFI(ctx context.Context, deps types.DepsFunc, config Config) error {
 		return errors.WithStack(err)
 	}
 
-	if err := buildInitramfs(config, filepath.Join(distroDir, initramfsFile),
-		filepath.Join(embedDir, initramfsFile)); err != nil {
+	if err := buildInitramfs(ctx, config, filepath.Join(embedDir, initramfsFile)); err != nil {
 		return err
 	}
 
-	if err := os.Symlink(filepath.Join(distroDir, kernelFile), filepath.Join(embedDir, kernelFile)); err != nil {
+	if err := os.Symlink(kernelPath(distroDir), filepath.Join(embedDir, kernelFile)); err != nil {
 		return errors.WithStack(err)
 	}
 
@@ -85,15 +84,15 @@ func BuildEFI(ctx context.Context, deps types.DepsFunc, config Config) error {
 	}
 	defer inF.Close()
 
-	if err := os.MkdirAll(filepath.Base(config.EFIPath), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Base(config.Output.EFI), 0o700); err != nil {
 		return errors.WithStack(err)
 	}
-	if err := os.Remove(config.EFIPath); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(config.Output.EFI); err != nil && !os.IsNotExist(err) {
 		return errors.WithStack(err)
 	}
 
 	const size = 200 * 1024 * 1024
-	b, err := file.CreateFromPath(config.EFIPath, size)
+	b, err := file.CreateFromPath(config.Output.EFI, size)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -118,15 +117,37 @@ func BuildEFI(ctx context.Context, deps types.DepsFunc, config Config) error {
 	return errors.WithStack(err)
 }
 
-func buildInitramfs(config Config, baseInitramfsPath, finalInitramfsPath string) error {
-	baseInitramfsF, err := os.Open(baseInitramfsPath)
+// BuildKernel builds kernel.
+func BuildKernel(ctx context.Context, config Config) error {
+	distroDir, err := buildDistro(ctx, config.Distro)
+	if err != nil {
+		return err
+	}
+
+	if err := os.Remove(config.Output.Kernel); err != nil && !os.IsNotExist(err) {
+		return errors.WithStack(err)
+	}
+	return errors.WithStack(os.Symlink(kernelPath(distroDir), config.Output.Kernel))
+}
+
+// BuildInitramfs builds initramfs.
+func BuildInitramfs(ctx context.Context, config Config) error {
+	return buildInitramfs(ctx, config, config.Output.Initramfs)
+}
+
+func buildInitramfs(ctx context.Context, config Config, finalInitramfsPath string) error {
+	distroDir, err := buildDistro(ctx, config.Distro)
+	if err != nil {
+		return err
+	}
+
+	baseInitramfsF, err := os.Open(initramfsPath(distroDir))
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	defer baseInitramfsF.Close()
 
-	finalInitramfsPathTmp := finalInitramfsPath + ".tmp"
-	finalInitramfsF, err := os.OpenFile(finalInitramfsPathTmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	finalInitramfsF, err := os.OpenFile(finalInitramfsPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -142,11 +163,7 @@ func buildInitramfs(config Config, baseInitramfsPath, finalInitramfsPath string)
 	w := cpio.NewWriter(cW)
 	defer w.Close()
 
-	if err := addFile(w, 0o700, config.InitBinPath); err != nil {
-		return err
-	}
-
-	return errors.WithStack(os.Rename(finalInitramfsPathTmp, finalInitramfsPath))
+	return addFile(w, 0o700, config.Input.InitBin)
 }
 
 func addFile(w *cpio.Writer, mode cpio.FileMode, file string) error {

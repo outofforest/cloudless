@@ -11,7 +11,6 @@ import (
 	"text/template"
 
 	"github.com/digitalocean/go-libvirt"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/samber/lo"
 
@@ -20,20 +19,37 @@ import (
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/kernel"
 	"github.com/outofforest/cloudless/pkg/parse"
+	"github.com/outofforest/cloudless/pkg/virt"
 )
 
 var (
 	//go:embed vm.tmpl.xml
-	vmDef string
-
+	vmDef     string
 	vmDefTmpl = lo.Must(template.New("vm").Parse(vmDef))
+
+	//go:embed pool.xml
+	poolDef string
+
+	//go:embed volume.tmpl.xml
+	volumeDef     string
+	volumeDefTmpl = lo.Must(template.New("volume").Parse(volumeDef))
 )
 
 // Config represents vm configuration.
 type Config struct {
-	EFIDiskPath string
-	Networks    []NetworkConfig
-	Bridges     []NetworkConfig
+	EFIDiskPath   string
+	KernelPath    string
+	InitramfsPath string
+	Volumes       []VolumeConfig
+	Networks      []NetworkConfig
+	Bridges       []NetworkConfig
+}
+
+// VolumeConfig represents vm's volume configuration.
+type VolumeConfig struct {
+	Name   string
+	Device string
+	Size   uint64
 }
 
 // NetworkConfig represents vm's network configuration.
@@ -47,21 +63,24 @@ type NetworkConfig struct {
 type Configurator func(vm *Config)
 
 type spec struct {
-	UUID        uuid.UUID
-	Name        string
-	Cores       uint64
-	VCPUs       uint64
-	Memory      uint64
-	Kernel      string
-	Initrd      string
-	EFIDiskPath string
-	Networks    []NetworkConfig
-	Bridges     []NetworkConfig
+	Name          string
+	Cores         uint64
+	VCPUs         uint64
+	Memory        uint64
+	KernelPath    string
+	InitramfsPath string
+	EFIDiskPath   string
+	Volumes       []VolumeConfig
+	Networks      []NetworkConfig
+	Bridges       []NetworkConfig
 }
 
 // New creates vm.
 func New(name string, cores, memory uint64, configurators ...Configurator) host.Configurator {
-	var vm Config
+	vm := Config{
+		KernelPath:    "/boot/vmlinuz",
+		InitramfsPath: "/boot/initramfs",
+	}
 
 	for _, configurator := range configurators {
 		configurator(&vm)
@@ -80,8 +99,6 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 		),
 		cloudless.AllocateHugePages(memory),
 		cloudless.Prepare(func(_ context.Context) error {
-			vmUUID := uuid.New()
-
 			filePath := fmt.Sprintf("/etc/libvirt/qemu/%s.xml", name)
 			f, err := os.OpenFile(filePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 			if err != nil {
@@ -90,14 +107,14 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 			defer f.Close()
 
 			data := spec{
-				UUID:     vmUUID,
-				Name:     name,
-				Cores:    cores,
-				VCPUs:    2 * cores,
-				Memory:   memory,
-				Kernel:   "/boot/vmlinuz",
-				Initrd:   "/boot/initramfs",
-				Networks: vm.Networks,
+				Volumes:       vm.Volumes,
+				Name:          name,
+				Cores:         cores,
+				VCPUs:         2 * cores,
+				Memory:        memory,
+				InitramfsPath: vm.InitramfsPath,
+				EFIDiskPath:   vm.EFIDiskPath,
+				Networks:      vm.Networks,
 			}
 
 			if err := vmDefTmpl.Execute(f, data); err != nil {
@@ -119,17 +136,21 @@ func Spec(name string, cores, memory uint64, configurators ...Configurator) dev.
 	}
 
 	return func(l *libvirt.Libvirt) error {
-		vmUUID := uuid.New()
+		if err := createVolumes(l, vm.Volumes); err != nil {
+			return err
+		}
 
 		data := spec{
-			UUID:        vmUUID,
-			Name:        name,
-			Cores:       cores,
-			VCPUs:       2 * cores,
-			Memory:      memory,
-			EFIDiskPath: vm.EFIDiskPath,
-			Networks:    vm.Networks,
-			Bridges:     vm.Bridges,
+			Name:          name,
+			Cores:         cores,
+			VCPUs:         2 * cores,
+			Memory:        memory,
+			KernelPath:    vm.KernelPath,
+			InitramfsPath: vm.InitramfsPath,
+			EFIDiskPath:   vm.EFIDiskPath,
+			Volumes:       vm.Volumes,
+			Networks:      vm.Networks,
+			Bridges:       vm.Bridges,
 		}
 
 		buf := &bytes.Buffer{}
@@ -145,10 +166,33 @@ func Spec(name string, cores, memory uint64, configurators ...Configurator) dev.
 	}
 }
 
+// KernelBoot configures VM to boot from kernel and initramfs.
+func KernelBoot(kernelPath, initramfsPath string) Configurator {
+	return func(vm *Config) {
+		vm.EFIDiskPath = ""
+		vm.KernelPath = kernelPath
+		vm.InitramfsPath = initramfsPath
+	}
+}
+
 // EFIBoot configures VM to boot from EFI partition.
 func EFIBoot(efiDiskPath string) Configurator {
 	return func(vm *Config) {
+		vm.KernelPath = ""
+		vm.InitramfsPath = ""
 		vm.EFIDiskPath = efiDiskPath
+	}
+}
+
+// Disk adds disk to the config.
+func Disk(name, device string, size uint64) Configurator {
+	const gb = 1024 * 1024 * 1024
+	return func(vm *Config) {
+		vm.Volumes = append(vm.Volumes, VolumeConfig{
+			Name:   name,
+			Device: device,
+			Size:   size * gb,
+		})
 	}
 }
 
@@ -172,4 +216,48 @@ func Bridge(bridgeName, ifaceName, mac string) Configurator {
 			MAC:           parse.MAC(mac),
 		})
 	}
+}
+
+func createVolumes(l *libvirt.Libvirt, volumes []VolumeConfig) error {
+	if len(volumes) == 0 {
+		return nil
+	}
+
+	pool, err := l.StoragePoolLookupByName(virt.StoragePoolName)
+	switch {
+	case err == nil:
+	case virt.IsError(err, libvirt.ErrNoStoragePool):
+		pool, err = l.StoragePoolDefineXML(poolDef, 0)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		if err := l.StoragePoolBuild(pool, libvirt.StoragePoolBuildNew); err != nil {
+			return errors.WithStack(err)
+		}
+	default:
+		return errors.WithStack(err)
+	}
+
+	active, err := l.StoragePoolIsActive(pool)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if active == 0 {
+		if err := l.StoragePoolCreate(pool, libvirt.StoragePoolCreateNormal); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+
+	for _, v := range volumes {
+		buf := &bytes.Buffer{}
+		if err := volumeDefTmpl.Execute(buf, v); err != nil {
+			return errors.WithStack(err)
+		}
+
+		if _, err := l.StorageVolCreateXML(pool, buf.String(), 0); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+
+	return nil
 }

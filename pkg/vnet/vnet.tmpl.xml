@@ -15,4 +15,5 @@
 {{ if .IP6 }}
     <ip family="ipv6" address="{{ .IP6 }}" prefix="{{ .IP6Prefix }}"/>
 {{ end }}
+    <dns enable="no"/>
 </network>

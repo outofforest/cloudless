@@ -292,7 +292,7 @@ func sessionHandler(ctx context.Context, chReq ssh.NewChannel, reqCh <-chan *ssh
 					return err
 				}
 
-				ptm, err = os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
+				ptm, err = os.OpenFile("/dev/pts/ptmx", os.O_RDWR, 0)
 				if err != nil {
 					return errors.WithStack(err)
 				}

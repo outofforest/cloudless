@@ -3,7 +3,6 @@
         <cloudless:cloudless xmlns:cloudless="http://go.exw.co/cloudless" />
     </metadata>
     <name>{{ .Name }}</name>
-    <uuid>{{ .UUID }}</uuid>
     <memory unit="GiB">{{ .Memory }}</memory>
     <currentMemory unit="GiB">{{ .Memory }}</currentMemory>
     <memoryBacking>
@@ -18,9 +17,9 @@
             <feature enabled="no" name="secure-boot"/>
         </firmware>
         <loader readonly="yes" type="pflash">/usr/share/edk2/ovmf/OVMF_CODE.fd</loader>
-{{ if and .Kernel .Initrd }}
-        <kernel>{{ .Kernel }}</kernel>
-        <initrd>{{ .Initrd }}</initrd>
+{{ if and .KernelPath .InitramfsPath }}
+        <kernel>{{ .KernelPath }}</kernel>
+        <initrd>{{ .InitramfsPath }}</initrd>
         <cmdline>selinux=0 default_hugepagesz=1G audit=0</cmdline>
 {{ end }}
     </os>
@@ -102,10 +101,18 @@
             <driver name="qemu" type="raw"/>
             <source file="{{ .EFIDiskPath }}"/>
             <target dev="vda" bus="virtio"/>
+            <readonly/>
             <shareable/>
             <boot order='1'/>
         </disk>
 {{ end}}
+{{ range .Volumes }}
+        <disk type="file" device="disk">
+            <driver name="qemu" type="qcow2"/>
+            <source file="/var/lib/libvirt/images/cloudless/{{ .Name }}.qcow2"/>
+            <target dev="{{ .Device }}" bus="virtio"/>
+        </disk>
+{{ end }}
 {{ range .Networks }}
         <interface type="network">
             <mac address="{{ .MAC }}"/>

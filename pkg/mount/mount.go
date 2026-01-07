@@ -177,6 +177,9 @@ func populateDev() error {
 	if err := syscall.Mount("none", devDir, "tmpfs", 0, "size=4m"); err != nil {
 		return errors.WithStack(err)
 	}
+	if err := DevPtsFS(filepath.Join(devDir, "pts")); err != nil {
+		return err
+	}
 	for _, dev := range []string{"console", "null", "zero", "random", "urandom"} {
 		devPath := filepath.Join(devDir, dev)
 
