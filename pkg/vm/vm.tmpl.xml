@@ -109,7 +109,7 @@
 {{ range .Volumes }}
         <disk type="file" device="disk">
             <driver name="qemu" type="qcow2"/>
-            <source file="/var/lib/libvirt/images/cloudless/{{ .Name }}.qcow2"/>
+            <source file="/var/lib/libvirt/images/cloudless/{{ .Name }}"/>
             <target dev="{{ .Device }}" bus="virtio"/>
         </disk>
 {{ end }}

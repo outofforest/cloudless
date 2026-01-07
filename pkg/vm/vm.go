@@ -37,6 +37,7 @@ var (
 
 // Config represents vm configuration.
 type Config struct {
+	Name          string
 	EFIDiskPath   string
 	KernelPath    string
 	InitramfsPath string
@@ -78,6 +79,7 @@ type spec struct {
 // New creates vm.
 func New(name string, cores, memory uint64, configurators ...Configurator) host.Configurator {
 	vm := Config{
+		Name:          name,
 		KernelPath:    "/boot/vmlinuz",
 		InitramfsPath: "/boot/initramfs",
 	}
@@ -108,7 +110,7 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 
 			data := spec{
 				Volumes:       vm.Volumes,
-				Name:          name,
+				Name:          vm.Name,
 				Cores:         cores,
 				VCPUs:         2 * cores,
 				Memory:        memory,
@@ -129,7 +131,9 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 
 // Spec defines dev spec of vm.
 func Spec(name string, cores, memory uint64, configurators ...Configurator) dev.SpecSource {
-	var vm Config
+	vm := Config{
+		Name: name,
+	}
 
 	for _, configurator := range configurators {
 		configurator(&vm)
@@ -141,7 +145,7 @@ func Spec(name string, cores, memory uint64, configurators ...Configurator) dev.
 		}
 
 		data := spec{
-			Name:          name,
+			Name:          vm.Name,
 			Cores:         cores,
 			VCPUs:         2 * cores,
 			Memory:        memory,
@@ -189,7 +193,7 @@ func Disk(name, device string, size uint64) Configurator {
 	const gb = 1024 * 1024 * 1024
 	return func(vm *Config) {
 		vm.Volumes = append(vm.Volumes, VolumeConfig{
-			Name:   name,
+			Name:   vm.Name + "-" + name,
 			Device: device,
 			Size:   size * gb,
 		})
@@ -249,6 +253,15 @@ func createVolumes(l *libvirt.Libvirt, volumes []VolumeConfig) error {
 	}
 
 	for _, v := range volumes {
+		_, err := l.StorageVolLookupByName(pool, v.Name)
+		switch {
+		case err == nil:
+			continue
+		case virt.IsError(err, libvirt.ErrNoStorageVol):
+		default:
+			return errors.WithStack(err)
+		}
+
 		buf := &bytes.Buffer{}
 		if err := volumeDefTmpl.Execute(buf, v); err != nil {
 			return errors.WithStack(err)
