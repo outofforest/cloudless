@@ -22,9 +22,10 @@ type OutputConfig struct {
 // DistroConfig is the configuration of distro builder.
 type DistroConfig struct {
 	EFI                  EFI
-	Base                 Base
-	KernelPackage        Package
-	KernelModulePackages []Package
+	Base                 Resource
+	KernelPackage        Resource
+	KernelModulePackages []Resource
+	BtrfsPackages        []Resource
 	KernelModules        []string
 }
 
@@ -34,15 +35,8 @@ type EFI struct {
 	Hash    string
 }
 
-// Base represents source of base OS filesystem.
-type Base struct {
+// Resource represents downloadable resource.
+type Resource struct {
 	URL  string
 	Hash string
-}
-
-// Package represents RPM package to take files from.
-type Package struct {
-	Name    string
-	Version string
-	Hash    string
 }
