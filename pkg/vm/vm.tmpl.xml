@@ -100,7 +100,7 @@
         <disk type="file" device="disk">
             <driver name="qemu" type="raw"/>
             <source file="{{ .EFIDiskPath }}"/>
-            <target dev="vda" bus="virtio"/>
+            <target dev="vdz" bus="virtio"/>
             <readonly/>
             <shareable/>
             <boot order='1'/>

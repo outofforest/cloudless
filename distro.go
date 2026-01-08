@@ -29,10 +29,8 @@ import (
 
 const (
 	efiURL           = "https://github.com/outofforest/efi/archive/refs/tags/%s.tar.gz"
-	repoURL          = "http://mirror.slu.cz/fedora/linux/updates/43/Everything/x86_64/Packages/k/"
 	configFile       = "config.json"
 	efiFile          = "efi.tar.gz"
-	baseDistroFile   = "distro.base.tar"
 	distroFile       = "distro.tar"
 	initramfsFile    = "initramfs"
 	kernelFile       = "vmlinuz"
@@ -43,7 +41,6 @@ const (
 	moduleTargetDir  = "/usr/lib/modules"
 )
 
-//nolint:gocyclo
 func buildDistro(ctx context.Context, config DistroConfig) (retConfigDir string, retErr error) {
 	distroDir, err := distroDir(config)
 	if err != nil {
@@ -55,7 +52,6 @@ func buildDistro(ctx context.Context, config DistroConfig) (retConfigDir string,
 	}
 
 	distroDirTmp := distroDir + ".tmp"
-	initramfsPath := initramfsPath(distroDirTmp)
 
 	logger.Get(ctx).Info("Building distro")
 
@@ -83,50 +79,95 @@ func buildDistro(ctx context.Context, config DistroConfig) (retConfigDir string,
 		return "", errors.WithStack(err)
 	}
 
-	efiPath := filepath.Join(distroDirTmp, efiFile)
-	if err := downloadEFI(ctx, config.EFI, efiPath); err != nil {
+	if err := downloadFile(ctx, fmt.Sprintf(efiURL, config.EFI.Version),
+		filepath.Join(distroDirTmp, efiFile), config.EFI.Hash); err != nil {
 		return "", err
 	}
-
-	baseDistroPath := filepath.Join(distroDirTmp, baseDistroFile)
-	if err := downloadBase(ctx, config.Base, baseDistroPath); err != nil {
-		return "", err
-	}
-
-	kernelPath := kernelPath(distroDirTmp)
-	if err := downloadKernel(ctx, config.KernelPackage, kernelPath); err != nil {
-		return "", err
-	}
-
-	moduleDir := filepath.Join(distroDirTmp, moduleDir)
-	depsPath := filepath.Join(distroDirTmp, depsFile)
-	if err := downloadModules(ctx, config.KernelModulePackages, config.KernelModules,
-		moduleDir, depsPath); err != nil {
-		return "", err
-	}
-
-	baseDistroF, err := os.Open(baseDistroPath)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	defer baseDistroF.Close()
 
 	distroPath := filepath.Join(distroDirTmp, distroFile)
-	finalDistroF, err := os.OpenFile(distroPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	distroF, err := distroFromBase(ctx, config.Base, distroPath)
+	if err != nil {
+		return "", err
+	}
+	defer distroF.Close()
+
+	distroWriter := tar.NewWriter(distroF)
+	defer distroWriter.Close()
+
+	if err := addKernelToDistro(ctx, config.KernelPackage, kernelPath(distroDirTmp), distroWriter); err != nil {
+		return "", err
+	}
+
+	if err := addModulesToDistro(ctx, config, distroDirTmp, distroWriter); err != nil {
+		return "", err
+	}
+
+	for _, pkg := range config.BtrfsPackages {
+		if err := addURLToDistro(ctx, filepath.Join("rpm", "btrfs", filepath.Base(pkg.URL)), pkg.URL, pkg.Hash, 0o400,
+			distroWriter); err != nil {
+			return "", err
+		}
+	}
+
+	initramfsF, err := os.OpenFile(initramfsPath(distroDirTmp), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
-	defer finalDistroF.Close()
+	defer initramfsF.Close()
 
-	if _, err := io.Copy(finalDistroF, baseDistroF); err != nil {
+	cW := gzip.NewWriter(initramfsF)
+	defer cW.Close()
+
+	w := cpio.NewWriter(cW)
+	defer w.Close()
+
+	if err := addFileToInitramfs(w, 0o600, distroPath); err != nil {
+		return "", err
+	}
+
+	if err := os.Rename(distroDirTmp, distroDir); err != nil {
 		return "", errors.WithStack(err)
 	}
 
-	if _, err := finalDistroF.Seek(0, io.SeekStart); err != nil {
-		return "", errors.WithStack(err)
+	return distroDir, nil
+}
+
+func distroFromBase(ctx context.Context, base Resource, path string) (retF *os.File, retErr error) {
+	log := logger.Get(ctx)
+	log.Info("Downloading distro base", zap.String("url", base.URL))
+
+	reader, _, err := streamFromURL(ctx, base.URL)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	defer reader.Close()
+
+	hReader, err := archive.NewHashingReader(reader, base.Hash)
+	if err != nil {
+		return nil, errors.WithStack(err)
 	}
 
-	tr := tar.NewReader(finalDistroF)
+	// Fedora .tar files are .tar.gz in reality.
+	gr, err := gzip.NewReader(hReader)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	defer gr.Close()
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	f, err := os.OpenFile(path, os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	defer func() {
+		if retErr != nil {
+			_ = f.Close()
+		}
+	}()
+
+	tr := tar.NewReader(io.TeeReader(gr, f))
 
 	var lastFileSize, lastStreamPos int64
 loop:
@@ -137,64 +178,139 @@ loop:
 		case errors.Is(err, io.EOF):
 			break loop
 		default:
-			return "", errors.WithStack(err)
+			return nil, errors.WithStack(err)
 		}
-		lastStreamPos, err = finalDistroF.Seek(0, io.SeekCurrent)
+
+		lastStreamPos, err = f.Seek(0, io.SeekCurrent)
 		if err != nil {
-			return "", errors.WithStack(err)
+			return nil, errors.WithStack(err)
 		}
 		lastFileSize = hdr.Size
 	}
 
-	const blockSize = 512
-	newOffset := lastStreamPos + lastFileSize
-	// shift to next-nearest block boundary (unless we are already on it)
-	if (newOffset % blockSize) != 0 {
-		newOffset += blockSize - (newOffset % blockSize)
-	}
-	if _, err := finalDistroF.Seek(newOffset, io.SeekStart); err != nil {
-		return "", errors.WithStack(err)
+	if err := hReader.ValidateChecksum(); err != nil {
+		return nil, errors.Wrapf(err, "downloading distro base %q failed", base.URL)
 	}
 
-	tw := tar.NewWriter(finalDistroF)
-	defer tw.Close()
+	if err := roundTarToBlock(f, lastStreamPos+lastFileSize); err != nil {
+		return nil, errors.WithStack(err)
+	}
 
-	kernelF, err := os.Open(kernelPath)
+	return f, err
+}
+
+func addFileToDistro(dstPath, srcPath string, mode os.FileMode, w *tar.Writer) error {
+	reader, size, err := streamFromFile(srcPath)
 	if err != nil {
-		return "", errors.WithStack(err)
+		return err
+	}
+	defer reader.Close()
+
+	if err := w.WriteHeader(&tar.Header{
+		Typeflag: tar.TypeReg,
+		Name:     dstPath,
+		Size:     size,
+		Mode:     int64(mode),
+	}); err != nil {
+		return errors.WithStack(err)
+	}
+
+	_, err = io.Copy(w, reader)
+	return errors.WithStack(err)
+}
+
+func addURLToDistro(ctx context.Context, dstPath, srcURL, checksum string, mode os.FileMode, w *tar.Writer) error {
+	log := logger.Get(ctx)
+	log.Info("Adding file", zap.String("url", srcURL))
+
+	reader, size, err := streamFromURL(ctx, srcURL)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	if err := w.WriteHeader(&tar.Header{
+		Typeflag: tar.TypeReg,
+		Name:     dstPath,
+		Size:     size,
+		Mode:     int64(mode),
+	}); err != nil {
+		return errors.WithStack(err)
+	}
+
+	if err := copyStream(w, reader, checksum); err != nil {
+		return errors.Wrapf(err, "downloading file %q failed", srcURL)
+	}
+
+	return nil
+}
+
+func addKernelToDistro(ctx context.Context, kernelPackage Resource, path string, w *tar.Writer) error {
+	log := logger.Get(ctx)
+	log.Info("Adding kernel module", zap.String("url", kernelPackage.URL))
+
+	reader, _, err := streamFromURL(ctx, kernelPackage.URL)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	hReader, err := archive.NewHashingReader(reader, kernelPackage.Hash)
+	if err != nil {
+		return err
+	}
+
+	kernelReader, size, err := searchRPM(hReader, kernelFile)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return errors.WithStack(err)
+	}
+
+	kernelF, err := os.OpenFile(path, os.O_TRUNC|os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return errors.WithStack(err)
 	}
 	defer kernelF.Close()
 
-	size, err := kernelF.Seek(0, io.SeekEnd)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	if _, err := kernelF.Seek(0, io.SeekStart); err != nil {
-		return "", errors.WithStack(err)
-	}
-
-	if err := tw.WriteHeader(&tar.Header{
+	if err := w.WriteHeader(&tar.Header{
 		Typeflag: tar.TypeReg,
 		Name:     kernelTargetPath,
 		Size:     size,
 		Mode:     0o500,
 	}); err != nil {
-		return "", errors.WithStack(err)
+		return errors.WithStack(err)
 	}
 
-	if _, err := io.Copy(tw, kernelF); err != nil {
-		return "", errors.WithStack(err)
+	if _, err := io.Copy(kernelF, io.TeeReader(kernelReader, w)); err != nil {
+		return errors.WithStack(err)
+	}
+	if err := hReader.ValidateChecksum(); err != nil {
+		return errors.Wrapf(err, "downloading kernel module %q failed", kernelPackage.URL)
+	}
+
+	return nil
+}
+
+func addModulesToDistro(ctx context.Context, config DistroConfig, distroDir string, w *tar.Writer) error {
+	moduleDir := filepath.Join(distroDir, moduleDir)
+	depsPath := filepath.Join(distroDir, depsFile)
+	if err := downloadModules(ctx, config.KernelModulePackages, config.KernelModules,
+		moduleDir, depsPath); err != nil {
+		return err
 	}
 
 	depF, err := os.Open(depsPath)
 	if err != nil {
-		return "", errors.WithStack(err)
+		return errors.WithStack(err)
 	}
 	defer depF.Close()
 
 	depMod := map[string][]string{}
 	if err := json.NewDecoder(depF).Decode(&depMod); err != nil {
-		return "", errors.WithStack(err)
+		return errors.WithStack(err)
 	}
 
 	modules := map[string]struct{}{}
@@ -214,211 +330,98 @@ loop:
 	sort.Strings(install)
 
 	for _, mName := range install {
-		if err := writeModule(mName, tw, moduleDir); err != nil {
-			return "", err
+		fileName := mName + ".ko"
+		if err := addFileToDistro(filepath.Join(moduleTargetDir, fileName),
+			filepath.Join(moduleDir, fileName), 0o400, w); err != nil {
+			return err
 		}
 	}
 
-	size, err = depF.Seek(0, io.SeekEnd)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	if _, err := depF.Seek(0, io.SeekStart); err != nil {
-		return "", errors.WithStack(err)
-	}
-
-	if err := tw.WriteHeader(&tar.Header{
-		Typeflag: tar.TypeReg,
-		Name:     filepath.Join(moduleTargetDir, depsFile),
-		Size:     size,
-		Mode:     0o400,
-	}); err != nil {
-		return "", errors.WithStack(err)
-	}
-	if _, err := io.Copy(tw, depF); err != nil {
-		return "", errors.WithStack(err)
-	}
-
-	initramfsF, err := os.OpenFile(initramfsPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	defer initramfsF.Close()
-
-	cW := gzip.NewWriter(initramfsF)
-	defer cW.Close()
-
-	w := cpio.NewWriter(cW)
-	defer w.Close()
-
-	if err := addFile(w, 0o600, distroPath); err != nil {
-		return "", err
-	}
-
-	if err := os.Rename(distroDirTmp, distroDir); err != nil {
-		return "", errors.WithStack(err)
-	}
-
-	return distroDir, nil
+	return addFileToDistro(filepath.Join(moduleTargetDir, depsFile), depsPath, 0o400, w)
 }
 
-func downloadEFI(ctx context.Context, efi EFI, path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return errors.WithStack(err)
-	}
-
-	efiURL := fmt.Sprintf(efiURL, efi.Version)
-
-	log := logger.Get(ctx)
-	log.Info("Downloading EFI", zap.String("url", efiURL))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, efiURL, nil)
+func streamFromFile(path string) (retR io.ReadSeekCloser, retSize int64, retErr error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return errors.WithStack(err)
+		return nil, 0, errors.WithStack(err)
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer resp.Body.Close()
-
-	efiF, err := os.OpenFile(path, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o600)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer efiF.Close()
-
-	reader, err := archive.NewHashingReader(resp.Body, efi.Hash)
-	if err != nil {
-		return errors.Wrapf(err, "creating hasher failed for efi %q", efiURL)
-	}
-
-	if _, err := io.Copy(efiF, reader); err != nil {
-		return errors.WithStack(err)
-	}
-
-	if err := reader.ValidateChecksum(); err != nil {
-		return errors.Wrap(err, "efi checksum mismatch")
-	}
-
-	return nil
-}
-
-func downloadBase(ctx context.Context, base Base, path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return errors.WithStack(err)
-	}
-
-	log := logger.Get(ctx)
-	log.Info("Downloading distro base", zap.String("url", base.URL))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base.URL, nil)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer resp.Body.Close()
-
-	initramfsF, err := os.OpenFile(path, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o600)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer initramfsF.Close()
-
-	reader, err := archive.NewHashingReader(resp.Body, base.Hash)
-	if err != nil {
-		return errors.Wrapf(err, "creating hasher failed for distro base %q", base.URL)
-	}
-
-	// Fedora .tar files are .tar.gz in reality.
-	gr, err := gzip.NewReader(reader)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer gr.Close()
-
-	if _, err := io.Copy(initramfsF, gr); err != nil {
-		return errors.WithStack(err)
-	}
-
-	if err := reader.ValidateChecksum(); err != nil {
-		return errors.Wrap(err, "distro base checksum mismatch")
-	}
-
-	return nil
-}
-
-func downloadKernel(ctx context.Context, kernelPackage Package, path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return errors.WithStack(err)
-	}
-
-	kernelPackageURL := packageURL(kernelPackage)
-
-	log := logger.Get(ctx)
-	log.Info("Downloading kernel module", zap.String("url", kernelPackageURL))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, kernelPackageURL, nil)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer resp.Body.Close()
-
-	reader, err := archive.NewHashingReader(resp.Body, kernelPackage.Hash)
-	if err != nil {
-		return errors.Wrapf(err, "creating hasher failed for package %q", kernelPackage.Name)
-	}
-
-	rpm, err := rpmutils.ReadRpm(reader)
-	if err != nil {
-		return errors.Wrapf(err, "failed reading RPM package %s", kernelPackageURL)
-	}
-
-	pReader, err := rpm.PayloadReaderExtended()
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	for {
-		fInfo, err := pReader.Next()
-		switch {
-		case err == nil:
-		case errors.Is(err, io.EOF):
-			return errors.New("kernel not found in rpm")
-		default:
-			return errors.WithStack(err)
+	defer func() {
+		if retErr != nil {
+			_ = f.Close()
 		}
+	}()
 
-		if filepath.Base(fInfo.Name()) == kernelFile && !pReader.IsLink() {
-			break
-		}
+	size, err := f.Seek(0, io.SeekEnd)
+	if err != nil {
+		return nil, 0, errors.WithStack(err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, 0, errors.WithStack(err)
 	}
 
-	vmlinuzF, err := os.OpenFile(path, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o700)
+	return f, size, nil
+}
+
+func streamFromURL(ctx context.Context, url string) (retR io.ReadCloser, retSize int64, retErr error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, 0, errors.WithStack(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, 0, errors.WithStack(err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, errors.Errorf("unexpected status code %d, url: %q", resp.StatusCode, url)
+	}
+
+	defer func() {
+		if retErr != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	return resp.Body, resp.ContentLength, nil
+}
+
+func copyStream(w io.Writer, r io.Reader, checksum string) error {
+	reader, err := archive.NewHashingReader(r, checksum)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(w, reader)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	defer vmlinuzF.Close()
 
-	if _, err := io.Copy(vmlinuzF, pReader); err != nil {
-		return errors.WithStack(err)
-	}
-
-	if err := reader.ValidateChecksum(); err != nil {
-		return errors.Wrapf(err, "rpm checksum mismatch, url: %q", kernelPackageURL)
-	}
-
-	return nil
+	return reader.ValidateChecksum()
 }
 
-func downloadModules(ctx context.Context, packages []Package, modules []string, moduleDir, depsFile string) error {
+func downloadFile(ctx context.Context, url, path, checksum string) error {
+	log := logger.Get(ctx)
+	log.Info("Downloading file", zap.String("url", url))
+
+	reader, _, err := streamFromURL(ctx, url)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer reader.Close()
+
+	f, err := os.OpenFile(path, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer f.Close()
+
+	if err := copyStream(f, reader, checksum); err != nil {
+		return errors.Wrapf(err, "downloading file %q failed", path)
+	}
+	return err
+}
+
+func downloadModules(ctx context.Context, packages []Resource, modules []string, moduleDir, depsFile string) error {
 	if err := os.MkdirAll(moduleDir, 0o700); err != nil {
 		return errors.WithStack(err)
 	}
@@ -474,32 +477,26 @@ func downloadModules(ctx context.Context, packages []Package, modules []string, 
 
 func downloadModulesFromPackage(
 	ctx context.Context,
-	pkg Package,
+	pkg Resource,
 	moduleDir string,
 	providers map[string]string,
 	requires map[string][]string,
 ) error {
-	mURL := packageURL(pkg)
-
 	log := logger.Get(ctx)
-	log.Info("Downloading module", zap.String("url", mURL))
+	log.Info("Downloading modules", zap.String("url", pkg.URL))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mURL, nil)
+	reader, _, err := streamFromURL(ctx, pkg.URL)
 	if err != nil {
-		return errors.WithStack(err)
+		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer resp.Body.Close()
+	defer reader.Close()
 
-	reader, err := archive.NewHashingReader(resp.Body, pkg.Hash)
+	hReader, err := archive.NewHashingReader(reader, pkg.Hash)
 	if err != nil {
-		return errors.Wrapf(err, "creating hasher failed for package %q", pkg.Name)
+		return err
 	}
 
-	rpm, err := rpmutils.ReadRpm(reader)
+	rpm, err := rpmutils.ReadRpm(hReader)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -528,7 +525,7 @@ loop:
 			continue
 		}
 
-		moduleName, providedSymbols, importedSymbols, err := storeModule(fileName, pReader, moduleDir)
+		moduleName, providedSymbols, importedSymbols, err := storeModuleOnDisk(fileName, pReader, moduleDir)
 		if err != nil {
 			return err
 		}
@@ -545,14 +542,14 @@ loop:
 		}
 	}
 
-	if err := reader.ValidateChecksum(); err != nil {
-		return errors.Wrapf(err, "rpm checksum mismatch, url: %q", mURL)
+	if err := hReader.ValidateChecksum(); err != nil {
+		return errors.Wrapf(err, "rpm checksum mismatch, url: %q", pkg.URL)
 	}
 
 	return nil
 }
 
-func storeModule(fileName string, r io.Reader, moduleDir string) (string, []string, []string, error) {
+func storeModuleOnDisk(fileName string, r io.Reader, moduleDir string) (string, []string, []string, error) {
 	xr, err := xz.NewReader(r)
 	if err != nil {
 		return "", nil, nil, errors.WithStack(err)
@@ -605,35 +602,52 @@ func storeModule(fileName string, r io.Reader, moduleDir string) (string, []stri
 	return moduleName, providedSymbols, importedSymbols, nil
 }
 
-func writeModule(name string, tw *tar.Writer, moduleDir string) error {
-	fileName := name + ".ko"
-	dstPath := filepath.Join(moduleTargetDir, fileName)
-
-	mf, err := os.Open(filepath.Join(moduleDir, fileName))
-	if err != nil {
-		return errors.WithStack(err)
+func roundTarToBlock(f *os.File, pos int64) error {
+	const blockSize = 512
+	if (pos % blockSize) != 0 {
+		pos += blockSize - (pos % blockSize)
 	}
-	defer mf.Close()
-
-	size, err := mf.Seek(0, io.SeekEnd)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	if _, err := mf.Seek(0, io.SeekStart); err != nil {
+	if err := f.Truncate(pos); err != nil {
 		return errors.WithStack(err)
 	}
 
-	if err := tw.WriteHeader(&tar.Header{
-		Typeflag: tar.TypeReg,
-		Name:     dstPath,
-		Size:     size,
-		Mode:     0o400,
-	}); err != nil {
-		return errors.WithStack(err)
-	}
-
-	_, err = io.Copy(tw, mf)
+	_, err := f.Seek(pos, io.SeekStart)
 	return errors.WithStack(err)
+}
+
+func searchRPM(r io.Reader, fileName string) (io.Reader, int64, error) {
+	rpm, err := rpmutils.ReadRpm(r)
+	if err != nil {
+		return nil, 0, errors.WithStack(err)
+	}
+
+	rpmReader, err := rpm.PayloadReaderExtended()
+	if err != nil {
+		return nil, 0, errors.WithStack(err)
+	}
+
+	var f rpmutils.FileInfo
+	for {
+		var err error
+		f, err = rpmReader.Next()
+		switch {
+		case err == nil:
+		case errors.Is(err, io.EOF):
+			return nil, 0, errors.Errorf("file %q not found in rpm", fileName)
+		default:
+			return nil, 0, errors.WithStack(err)
+		}
+
+		if filepath.Base(f.Name()) == fileName && !rpmReader.IsLink() {
+			break
+		}
+	}
+
+	return rpmReader, f.Size(), nil
+}
+
+func distrosBase() string {
+	return filepath.Join(lo.Must(os.UserCacheDir()), "cloudless/distros")
 }
 
 func distroDir(config DistroConfig) (string, error) {
@@ -642,7 +656,7 @@ func distroDir(config DistroConfig) (string, error) {
 		return "", errors.WithStack(err)
 	}
 	configHash := sha256.Sum256(configMarshalled)
-	return filepath.Join(lo.Must(os.UserCacheDir()), "cloudless/distros", hex.EncodeToString(configHash[:])), nil
+	return filepath.Join(distrosBase(), hex.EncodeToString(configHash[:])), nil
 }
 
 func kernelPath(distroDir string) string {
@@ -651,8 +665,4 @@ func kernelPath(distroDir string) string {
 
 func initramfsPath(distroDir string) string {
 	return filepath.Join(distroDir, initramfsFile)
-}
-
-func packageURL(p Package) string {
-	return repoURL + p.Name + "-" + p.Version + ".rpm"
 }

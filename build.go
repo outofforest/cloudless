@@ -163,10 +163,10 @@ func buildInitramfs(ctx context.Context, config Config, finalInitramfsPath strin
 	w := cpio.NewWriter(cW)
 	defer w.Close()
 
-	return addFile(w, 0o700, config.Input.InitBin)
+	return addFileToInitramfs(w, 0o700, config.Input.InitBin)
 }
 
-func addFile(w *cpio.Writer, mode cpio.FileMode, file string) error {
+func addFileToInitramfs(w *cpio.Writer, mode cpio.FileMode, file string) error {
 	f, err := os.Open(file)
 	if err != nil {
 		return errors.WithStack(err)

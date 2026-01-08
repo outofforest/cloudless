@@ -2,7 +2,9 @@ package cloudless
 
 import (
 	"context"
+	goerrors "errors"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 
@@ -10,7 +12,9 @@ import (
 	"github.com/digitalocean/go-libvirt/socket"
 	"github.com/digitalocean/go-libvirt/socket/dialers"
 	"github.com/pkg/errors"
+	"github.com/samber/lo"
 
+	"github.com/outofforest/archive"
 	"github.com/outofforest/cloudless/pkg/dev"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/virt"
@@ -60,6 +64,45 @@ func Destroy(ctx context.Context, libvirtAddr string) error {
 		return err
 	}
 	return virt.DestroyNetworks(ctx, l, virt.StopDev)
+}
+
+// Verify verifies checksums in config.
+func Verify(ctx context.Context, config Config) error {
+	errs := []error{}
+
+	resources := append(append([]Resource{
+		config.Distro.Base,
+		config.Distro.KernelPackage,
+	}, config.Distro.KernelModulePackages...), config.Distro.BtrfsPackages...)
+
+	for _, r := range resources {
+		err := func() error {
+			resp, err := http.DefaultClient.Do(lo.Must(http.NewRequestWithContext(ctx, http.MethodGet, r.URL, nil)))
+			if err != nil {
+				return errors.WithStack(err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				errs = append(errs, errors.Errorf("unexpected status code %d, url: %q", resp.StatusCode, r.URL))
+				return nil
+			}
+
+			reader, err := archive.NewHashingReader(resp.Body, r.Hash)
+			if err != nil {
+				return errors.Wrapf(err, "crearting hasher failed for url %q", r.URL)
+			}
+			if err := reader.ValidateChecksum(); err != nil {
+				errs = append(errs, errors.Wrapf(err, "checksum does not match for url %q", r.URL))
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
+		}
+	}
+
+	return goerrors.Join(errs...)
 }
 
 // DummyService is used to keep box running without any service.

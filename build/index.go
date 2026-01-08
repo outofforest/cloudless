@@ -9,4 +9,5 @@ var Commands = map[string]types.Command{
 	"start/efi": {Fn: startEFI, Description: "Starts dev environment with EFI boot"},
 	"stop":      {Fn: stop, Description: "Stops dev environment"},
 	"destroy":   {Fn: destroy, Description: "Destroys dev environment"},
+	"verify":    {Fn: verify, Description: "Verifies checksums in config"},
 }
