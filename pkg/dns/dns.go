@@ -52,7 +52,6 @@ const (
 func Service(configurators ...Configurator) host.Configurator {
 	config := Config{
 		DNSPort:  Port,
-		ACMEPort: acme.Port,
 		DKIMPort: dkim.Port,
 		Zones:    map[string]ZoneConfig{},
 	}
@@ -67,12 +66,12 @@ func Service(configurators ...Configurator) host.Configurator {
 
 func run(ctx context.Context, config Config) error {
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
-		var acmeServer *acme.Server
+		var acmeServer *acme.Handler
 		var dkimServer *dkim.Server
 		var forwardCh chan forwardRequest
 
 		if config.EnableACME {
-			acmeServer = acme.NewServer(config.ACMEPort)
+			acmeServer = acme.New(config.WaveServers)
 			spawn("acme", parallel.Fail, acmeServer.Run)
 		}
 		if config.EnableACME {
@@ -110,7 +109,7 @@ func runResolver(
 	ctx context.Context,
 	config Config,
 	forwardCh chan<- forwardRequest,
-	acmeServer *acme.Server,
+	acmeServer *acme.Handler,
 	dkimServer *dkim.Server,
 ) error {
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{
@@ -333,7 +332,7 @@ func resolve(
 	zConfig ZoneConfig,
 	b []byte,
 	queryID uint64,
-	acmeServer *acme.Server,
+	acmeServer *acme.Handler,
 	dkimServer *dkim.Server,
 	h *header,
 	maxMsgLength uint16,

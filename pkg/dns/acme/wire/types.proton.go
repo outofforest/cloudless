@@ -9,8 +9,7 @@ import (
 )
 
 const (
-	id2 uint64 = iota + 1
-	id0
+	id1 uint64 = iota + 1
 )
 
 var _ proton.Marshaller = Marshaller{}
@@ -28,7 +27,6 @@ type Marshaller struct {
 func (m Marshaller) Messages() []any {
 	return []any {
 		MsgRequest{},
-		MsgAck{},
 	}
 }
 
@@ -36,9 +34,7 @@ func (m Marshaller) Messages() []any {
 func (m Marshaller) ID(msg any) (uint64, error) {
 	switch msg.(type) {
 	case *MsgRequest:
-		return id2, nil
-	case *MsgAck:
-		return id0, nil
+		return id1, nil
 	default:
 		return 0, errors.Errorf("unknown message type %T", msg)
 	}
@@ -48,9 +44,7 @@ func (m Marshaller) ID(msg any) (uint64, error) {
 func (m Marshaller) Size(msg any) (uint64, error) {
 	switch msg2 := msg.(type) {
 	case *MsgRequest:
-		return size2(msg2), nil
-	case *MsgAck:
-		return size0(msg2), nil
+		return size1(msg2), nil
 	default:
 		return 0, errors.Errorf("unknown message type %T", msg)
 	}
@@ -62,9 +56,7 @@ func (m Marshaller) Marshal(msg any, buf []byte) (retID, retSize uint64, retErr 
 
 	switch msg2 := msg.(type) {
 	case *MsgRequest:
-		return id2, marshal2(msg2, buf), nil
-	case *MsgAck:
-		return id0, marshal0(msg2, buf), nil
+		return id1, marshal1(msg2, buf), nil
 	default:
 		return 0, 0, errors.Errorf("unknown message type %T", msg)
 	}
@@ -75,12 +67,9 @@ func (m Marshaller) Unmarshal(id uint64, buf []byte) (retMsg any, retSize uint64
 	defer helpers.RecoverUnmarshal(&retErr)
 
 	switch id {
-	case id2:
+	case id1:
 		msg := &MsgRequest{}
-		return msg, unmarshal2(msg, buf), nil
-	case id0:
-		msg := &MsgAck{}
-		return msg, unmarshal0(msg, buf), nil
+		return msg, unmarshal1(msg, buf), nil
 	default:
 		return nil, 0, errors.Errorf("unknown ID %d", id)
 	}
@@ -92,9 +81,7 @@ func (m Marshaller) MakePatch(msgDst, msgSrc any, buf []byte) (retID, retSize ui
 
 	switch msg2 := msgDst.(type) {
 	case *MsgRequest:
-		return id2, makePatch2(msg2, msgSrc.(*MsgRequest), buf), nil
-	case *MsgAck:
-		return id0, makePatch0(msg2, msgSrc.(*MsgAck), buf), nil
+		return id1, makePatch1(msg2, msgSrc.(*MsgRequest), buf), nil
 	default:
 		return 0, 0, errors.Errorf("unknown message type %T", msgDst)
 	}
@@ -106,44 +93,13 @@ func (m Marshaller) ApplyPatch(msg any, buf []byte) (retSize uint64, retErr erro
 
 	switch msg2 := msg.(type) {
 	case *MsgRequest:
-		return applyPatch2(msg2, buf), nil
-	case *MsgAck:
-		return applyPatch0(msg2, buf), nil
+		return applyPatch1(msg2, buf), nil
 	default:
 		return 0, errors.Errorf("unknown message type %T", msg)
 	}
 }
 
-func size0(m *MsgAck) uint64 {
-	var n uint64
-	return n
-}
-
-func marshal0(m *MsgAck, b []byte) uint64 {
-	var o uint64
-
-	return o
-}
-
-func unmarshal0(m *MsgAck, b []byte) uint64 {
-	var o uint64
-
-	return o
-}
-
-func makePatch0(m, mSrc *MsgAck, b []byte) uint64 {
-	var o uint64
-
-	return o
-}
-
-func applyPatch0(m *MsgAck, b []byte) uint64 {
-	var o uint64
-
-	return o
-}
-
-func size2(m *MsgRequest) uint64 {
+func size1(m *MsgRequest) uint64 {
 	var n uint64 = 3
 	{
 		// Provider
@@ -169,13 +125,13 @@ func size2(m *MsgRequest) uint64 {
 		l := uint64(len(m.Challenges))
 		helpers.UInt64Size(l, &n)
 		for _, sv1 := range m.Challenges {
-			n += size1(&sv1)
+			n += size0(&sv1)
 		}
 	}
 	return n
 }
 
-func marshal2(m *MsgRequest, b []byte) uint64 {
+func marshal1(m *MsgRequest, b []byte) uint64 {
 	var o uint64
 	{
 		// Provider
@@ -202,14 +158,14 @@ func marshal2(m *MsgRequest, b []byte) uint64 {
 
 		helpers.UInt64Marshal(uint64(len(m.Challenges)), b, &o)
 		for _, sv1 := range m.Challenges {
-			o += marshal1(&sv1, b[o:])
+			o += marshal0(&sv1, b[o:])
 		}
 	}
 
 	return o
 }
 
-func unmarshal2(m *MsgRequest, b []byte) uint64 {
+func unmarshal1(m *MsgRequest, b []byte) uint64 {
 	var o uint64
 	{
 		// Provider
@@ -243,7 +199,7 @@ func unmarshal2(m *MsgRequest, b []byte) uint64 {
 		if l > 0 {
 			m.Challenges = make([]Challenge, l)
 			for i1 := range l {
-				o += unmarshal1(&m.Challenges[i1], b[o:])
+				o += unmarshal0(&m.Challenges[i1], b[o:])
 			}
 		}
 	}
@@ -251,7 +207,7 @@ func unmarshal2(m *MsgRequest, b []byte) uint64 {
 	return o
 }
 
-func makePatch2(m, mSrc *MsgRequest, b []byte) uint64 {
+func makePatch1(m, mSrc *MsgRequest, b []byte) uint64 {
 	var o uint64 = 1
 	{
 		// Provider
@@ -292,7 +248,7 @@ func makePatch2(m, mSrc *MsgRequest, b []byte) uint64 {
 			b[0] |= 0x04
 			helpers.UInt64Marshal(uint64(len(m.Challenges)), b, &o)
 			for _, sv1 := range m.Challenges {
-				o += marshal1(&sv1, b[o:])
+				o += marshal0(&sv1, b[o:])
 			}
 		}
 	}
@@ -300,7 +256,7 @@ func makePatch2(m, mSrc *MsgRequest, b []byte) uint64 {
 	return o
 }
 
-func applyPatch2(m *MsgRequest, b []byte) uint64 {
+func applyPatch1(m *MsgRequest, b []byte) uint64 {
 	var o uint64 = 1
 	{
 		// Provider
@@ -339,7 +295,7 @@ func applyPatch2(m *MsgRequest, b []byte) uint64 {
 			if l > 0 {
 				m.Challenges = make([]Challenge, l)
 				for i1 := range l {
-					o += unmarshal1(&m.Challenges[i1], b[o:])
+					o += unmarshal0(&m.Challenges[i1], b[o:])
 				}
 			}
 		}
@@ -348,7 +304,7 @@ func applyPatch2(m *MsgRequest, b []byte) uint64 {
 	return o
 }
 
-func size1(m *Challenge) uint64 {
+func size0(m *Challenge) uint64 {
 	var n uint64 = 2
 	{
 		// Domain
@@ -371,7 +327,7 @@ func size1(m *Challenge) uint64 {
 	return n
 }
 
-func marshal1(m *Challenge, b []byte) uint64 {
+func marshal0(m *Challenge, b []byte) uint64 {
 	var o uint64
 	{
 		// Domain
@@ -397,7 +353,7 @@ func marshal1(m *Challenge, b []byte) uint64 {
 	return o
 }
 
-func unmarshal1(m *Challenge, b []byte) uint64 {
+func unmarshal0(m *Challenge, b []byte) uint64 {
 	var o uint64
 	{
 		// Domain

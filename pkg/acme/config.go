@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
-	dnsacme "github.com/outofforest/cloudless/pkg/dns/acme"
 	"github.com/outofforest/cloudless/pkg/pebble"
 	"github.com/outofforest/cloudless/pkg/tnet"
+	"github.com/outofforest/cloudless/pkg/wave"
 )
 
 // Config stores acme configuration.
@@ -15,7 +15,7 @@ type Config struct {
 	AccountFile string
 	CertFile    string
 	Directory   DirectoryConfig
-	DNSACME     []string
+	WaveServers []string
 	Domains     []string
 }
 
@@ -60,11 +60,11 @@ func Pebble(host string) DirectoryConfig {
 	}
 }
 
-// DNSACMEs adds dns acme service to connect to when creating challenges.
-func DNSACMEs(dnsACMEs ...string) Configurator {
+// Waves adds wave servers to send challenge requests to.
+func Waves(waves ...string) Configurator {
 	return func(c *Config) {
-		for _, dnsACME := range dnsACMEs {
-			c.DNSACME = append(c.DNSACME, dnsacme.Address(dnsACME))
+		for _, w := range waves {
+			c.WaveServers = append(c.WaveServers, wave.Address(w))
 		}
 	}
 }

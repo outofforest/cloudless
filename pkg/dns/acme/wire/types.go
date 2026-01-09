@@ -7,9 +7,6 @@ type MsgRequest struct {
 	Challenges []Challenge
 }
 
-// MsgAck acknowledges record creation.
-type MsgAck struct{}
-
 // Challenge is the ACME challenge.
 type Challenge struct {
 	Domain string
