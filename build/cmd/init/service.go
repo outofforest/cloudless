@@ -2,13 +2,22 @@ package main
 
 import (
 	. "github.com/outofforest/cloudless" //nolint:staticcheck
+	"github.com/outofforest/cloudless/pkg/container"
 	"github.com/outofforest/cloudless/pkg/dns"
 	"github.com/outofforest/cloudless/pkg/shield"
 )
 
 var HostService = Join(
 	Host("service",
-		Network("02:00:00:00:00:02", "igw", IPs("10.101.0.2/24")),
+		Network("02:00:00:00:00:02", "eth0", Master("igw")),
+		Gateway("10.101.0.1"),
+		Bridge("igw", "02:00:00:00:02:01", IPs("10.101.0.2/24")),
+		container.New("dns", "/root/persistent/containers/cache",
+			container.Network("igw", "vdns", "02:00:00:00:02:02"),
+		),
+	),
+	Container("dns",
+		Network("02:00:00:00:02:02", "igw", IPs("10.101.0.8/24")),
 		Gateway("10.101.0.1"),
 		shield.Open("udp4", "igw", dns.Port),
 		dns.Service(
