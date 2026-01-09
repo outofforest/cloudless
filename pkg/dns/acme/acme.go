@@ -2,94 +2,97 @@ package acme
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
-	"net"
 	"sync"
+	"time"
 
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
 
 	"github.com/outofforest/cloudless/pkg/dns/acme/wire"
-	"github.com/outofforest/cloudless/pkg/tnet"
-	"github.com/outofforest/resonance"
+	"github.com/outofforest/parallel"
+	"github.com/outofforest/wave"
 )
 
 const (
-	// Port is the port ACME server listens on.
-	Port = 80
-
 	// DomainPrefix is the domain prefix defined by ACME.
 	DomainPrefix = "_acme-challenge."
 )
 
-// WireConfig is the DNS ACME service wire config.
-var WireConfig = resonance.Config{
-	MaxMessageSize: 4 * 1024,
-}
-
-// Address returns address of dns acme endpoint.
-func Address(host string) string {
-	return tnet.Join(host, Port)
-}
-
-// Server is the ACME server accepting DNS challenges.
-type Server struct {
-	port uint16
+// Handler is the ACME handler resolving challenges.
+type Handler struct {
+	waveServers []string
 
 	mu         sync.Mutex
-	challenges map[string]map[uuid.UUID]acmeRecord
+	challenges map[string]map[[32]byte]acmeRecord
 }
 
-// NewServer creates new ACME server.
-func NewServer(port uint16) *Server {
-	return &Server{
-		port:       port,
-		challenges: map[string]map[uuid.UUID]acmeRecord{},
+// New creates new ACME handler.
+func New(waveServers []string) *Handler {
+	return &Handler{
+		waveServers: waveServers,
+		challenges:  map[string]map[[32]byte]acmeRecord{},
 	}
 }
 
-// Run runs ACME server.
-func (s *Server) Run(ctx context.Context) error {
-	l, err := net.ListenTCP("tcp", &net.TCPAddr{
-		IP:   net.IPv4zero,
-		Port: int(s.port),
-	})
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
+// Run runs ACME handler.
+func (h *Handler) Run(ctx context.Context) error {
 	m := wire.NewMarshaller()
-	return resonance.RunServer(ctx, l, WireConfig,
-		func(ctx context.Context, c *resonance.Connection) error {
+
+	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+		waveClient, waveCh, err := wave.NewClient(wave.ClientConfig{
+			Servers:        h.waveServers,
+			MaxMessageSize: 1024,
+			Requests: []wave.RequestConfig{
+				{
+					Marshaller: m,
+					Messages:   []any{&wire.MsgRequest{}},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		spawn("wave", parallel.Fail, waveClient.Run)
+		spawn("clean", parallel.Fail, func(ctx context.Context) error {
 			for {
-				msg, err := c.ReceiveProton(m)
-				if err != nil {
-					return err
-				}
-
-				req, ok := msg.(*wire.MsgRequest)
-				if !ok {
-					return errors.New("unrecognized message received")
-				}
-
-				id := uuid.New()
-				s.storeRequest(id, req)
-				defer s.removeChallenges(id, req.Challenges)
-
-				if err := c.SendProton(&wire.MsgAck{}, m); err != nil {
-					return err
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				case <-time.After(time.Minute):
+					h.cleanChallenges()
 				}
 			}
-		},
-	)
+		})
+		spawn("receiver", parallel.Fail, func(ctx context.Context) error {
+			for {
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				case msg := <-waveCh:
+					reqMsg, ok := msg.(*wire.MsgRequest)
+					if !ok {
+						return errors.New("unexpected message type")
+					}
+
+					if err := h.storeRequest(reqMsg); err != nil {
+						return err
+					}
+				}
+			}
+		})
+
+		return nil
+	})
 }
 
 // QueryTXT returns TXT challenge responses for domain.
-func (s *Server) QueryTXT(domain string) []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (h *Handler) QueryTXT(domain string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-	d := s.challenges[domain]
+	d := h.challenges[domain]
 	if len(d) == 0 {
 		return nil
 	}
@@ -103,11 +106,11 @@ func (s *Server) QueryTXT(domain string) []string {
 }
 
 // QueryCAA returns CAA responses for domain.
-func (s *Server) QueryCAA(domain string) []CAA {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (h *Handler) QueryCAA(domain string) []CAA {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-	d := s.challenges[domain]
+	d := h.challenges[domain]
 	if len(d) == 0 {
 		return nil
 	}
@@ -120,18 +123,27 @@ func (s *Server) QueryCAA(domain string) []CAA {
 	return values
 }
 
-func (s *Server) storeRequest(id uuid.UUID, req *wire.MsgRequest) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (h *Handler) storeRequest(req *wire.MsgRequest) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	var id [32]byte
+	t := time.Now()
+
+	_, err := rand.Read(id[:])
+	if err != nil {
+		return errors.WithStack(err)
+	}
 
 	for _, ch := range req.Challenges {
-		chs := s.challenges[ch.Domain]
+		chs := h.challenges[ch.Domain]
 		if chs == nil {
-			chs = map[uuid.UUID]acmeRecord{}
-			s.challenges[ch.Domain] = chs
+			chs = map[[32]byte]acmeRecord{}
+			h.challenges[ch.Domain] = chs
 		}
 		chs[id] = acmeRecord{
-			Value: ch.Value,
+			TimeAdded: t,
+			Value:     ch.Value,
 			CAA: CAA{
 				Flags: 128,
 				Tag:   "issue",
@@ -139,27 +151,30 @@ func (s *Server) storeRequest(id uuid.UUID, req *wire.MsgRequest) {
 			},
 		}
 	}
+
+	return nil
 }
 
-func (s *Server) removeChallenges(id uuid.UUID, challenges []wire.Challenge) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (h *Handler) cleanChallenges() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-	for _, ch := range challenges {
-		chs := s.challenges[ch.Domain]
-		if chs == nil {
-			continue
+	for d, chs := range h.challenges {
+		for id, r := range chs {
+			if time.Since(r.TimeAdded) > time.Minute {
+				delete(chs, id)
+			}
 		}
-		delete(chs, id)
 		if len(chs) == 0 {
-			delete(s.challenges, ch.Domain)
+			delete(h.challenges, d)
 		}
 	}
 }
 
 type acmeRecord struct {
-	Value string
-	CAA   CAA
+	TimeAdded time.Time
+	Value     string
+	CAA       CAA
 }
 
 // CAA represents CAA record.

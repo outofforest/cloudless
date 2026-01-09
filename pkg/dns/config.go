@@ -5,18 +5,19 @@ import (
 	"strings"
 
 	"github.com/outofforest/cloudless/pkg/parse"
+	"github.com/outofforest/cloudless/pkg/wave"
 )
 
 // Config stores dns configuration.
 type Config struct {
-	DNSPort    uint16
-	ACMEPort   uint16
-	DKIMPort   uint16
-	Zones      map[string]ZoneConfig
-	ForwardTo  []net.IP
-	ForwardFor []net.IPNet
-	EnableACME bool
-	EnableDKIM bool
+	DNSPort     uint16
+	DKIMPort    uint16
+	Zones       map[string]ZoneConfig
+	ForwardTo   []net.IP
+	ForwardFor  []net.IPNet
+	EnableACME  bool
+	EnableDKIM  bool
+	WaveServers []string
 }
 
 // ZoneConfig stores dns zone configuration.
@@ -161,5 +162,14 @@ func ACME() Configurator {
 func DKIM() Configurator {
 	return func(c *Config) {
 		c.EnableDKIM = true
+	}
+}
+
+// Waves adds wave servers to send challenge requests to.
+func Waves(waves ...string) Configurator {
+	return func(c *Config) {
+		for _, w := range waves {
+			c.WaveServers = append(c.WaveServers, wave.Address(w))
+		}
 	}
 }

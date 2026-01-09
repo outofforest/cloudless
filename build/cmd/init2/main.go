@@ -10,7 +10,6 @@ import (
 	"github.com/outofforest/cloudless/pkg/container"
 	containercache "github.com/outofforest/cloudless/pkg/container/cache"
 	"github.com/outofforest/cloudless/pkg/dns"
-	dnsacme "github.com/outofforest/cloudless/pkg/dns/acme"
 	dnsdkim "github.com/outofforest/cloudless/pkg/dns/dkim"
 	"github.com/outofforest/cloudless/pkg/email"
 	"github.com/outofforest/cloudless/pkg/eye"
@@ -59,7 +58,6 @@ var (
 	// HostDNS configures DNS virtual machine.
 	HostDNS = ExtendBoxFactory(Host,
 		shield.Open("udp4", "igw", dns.Port),
-		shield.Open("tcp4", "igw", dnsacme.Port),
 		shield.Open("tcp4", "igw", dnsdkim.Port),
 		dns.Service(
 			dns.ACME(),
@@ -201,7 +199,7 @@ var deployment = Deployment(
 		Mount("/root/mounts/acme", "/acme", true),
 		shield.Open("tcp4", "igw", acme.Port),
 		acme.Service("/acme", "wojtek@exw.co", acme.LetsEncryptStaging,
-			acme.DNSACMEs("10.0.3.2", "10.0.3.3"),
+			acme.Waves("10.0.3.2", "10.0.3.3"),
 			acme.Domains("dev.onem.network"),
 		),
 	),
