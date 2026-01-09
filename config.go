@@ -93,13 +93,22 @@ func ExtendBoxFactory(boxFunc BoxFunc, configurators ...host.Configurator) BoxFu
 // Join combines many configurator into a single one.
 func Join(configurators ...host.Configurator) host.Configurator {
 	return func(c *host.Configuration) error {
+		var hostErr error
 		for _, configurator := range configurators {
-			if err := configurator(c); err != nil {
+			err := configurator(c)
+			switch {
+			case err == nil:
+			case errors.Is(err, host.ErrHostFound):
+				if hostErr != nil {
+					return errors.New("host matches many configurations")
+				}
+				hostErr = err
+			default:
 				return err
 			}
 		}
 
-		return nil
+		return hostErr
 	}
 }
 
