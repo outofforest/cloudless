@@ -148,12 +148,16 @@ func (cir *containerImagesRepo) Register(images []string) {
 	}
 }
 
-// PrepareFn is the function type used to register functions preparing host.
-type PrepareFn func(ctx context.Context) error
+type (
+	// PrepareFn is the function type used to register functions preparing host.
+	PrepareFn func(ctx context.Context) error
+
+	// PruneFn is the function type used to register functions saying if root directory should be pruned.
+	PruneFn func() (bool, error)
+)
 
 // SealedConfiguration exposes information collected by the configurators.
 type SealedConfiguration interface {
-	IsContainer() bool
 	MetricGatherer() prometheus.Gatherer
 	Packages() []string
 	ContainerImages() []string
@@ -179,12 +183,13 @@ type Route struct {
 
 // Configuration allows service to configure the required host settings.
 type Configuration struct {
-	isContainer         bool
-	topConfig           *Configuration
-	pkgRepo             *packageRepo
-	containerImagesRepo *containerImagesRepo
-	remoteLoggingConfig remote.Config[logLabels]
-	metricGatherers     prometheus.Gatherers
+	isContainer             bool
+	hostOnly, containerOnly bool
+	topConfig               *Configuration
+	pkgRepo                 *packageRepo
+	containerImagesRepo     *containerImagesRepo
+	remoteLoggingConfig     remote.Config[logLabels]
+	metricGatherers         prometheus.Gatherers
 
 	requireIPForwarding bool
 	requireInitramfs    bool
@@ -202,6 +207,7 @@ type Configuration struct {
 	vlans               []VLANConfig
 	firewall            []firewall.RuleSource
 	hugePages           uint64
+	prune               []PruneFn
 	prepare             []PrepareFn
 	services            []ServiceConfig
 	mounts              []mountConfig
@@ -210,7 +216,9 @@ type Configuration struct {
 // NewSubconfiguration creates subconfiguration.
 func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
 	c2 := &Configuration{
-		topConfig:           c,
+		topConfig:           c.topConfig,
+		hostOnly:            c.hostOnly,
+		containerOnly:       c.containerOnly,
 		pkgRepo:             c.pkgRepo,
 		containerImagesRepo: c.containerImagesRepo,
 	}
@@ -244,6 +252,7 @@ func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
 		c.AddFirewallRules(c2.firewall...)
 		c.AddHugePages(c2.hugePages)
 		c.mounts = append(c.mounts, c2.mounts...)
+		c.Prune(c2.prune...)
 		c.Prepare(c2.prepare...)
 		c.StartServices(c2.services...)
 	}
@@ -257,6 +266,16 @@ func (c *Configuration) Sealed() SealedConfiguration {
 // IsContainer informs if configurator is executed in the context of container.
 func (c *Configuration) IsContainer() bool {
 	return c.topConfig.isContainer
+}
+
+// HostOnly requires image to be run on host.
+func (c *Configuration) HostOnly() {
+	c.hostOnly = true
+}
+
+// ContainerOnly requires image to be run inside container.
+func (c *Configuration) ContainerOnly() {
+	c.containerOnly = true
 }
 
 // RemoteLogging configures remote logging.
@@ -390,6 +409,11 @@ func (c *Configuration) AddMount(source, target string, writable bool) {
 	})
 }
 
+// Prune adds prune function to be called.
+func (c *Configuration) Prune(prunes ...PruneFn) {
+	c.prune = append(c.prune, prunes...)
+}
+
 // Prepare adds prepare function to be called.
 func (c *Configuration) Prepare(prepares ...PrepareFn) {
 	c.prepare = append(c.prepare, prepares...)
@@ -418,7 +442,12 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 	}
 	cfg.topConfig = cfg
 
+	//nolint:nestif
 	if cfg.isContainer {
+		if cfg.hostOnly {
+			return errors.New("image must be run on host")
+		}
+
 		if err := mount.ContainerRootPrepare(); err != nil {
 			return err
 		}
@@ -428,6 +457,10 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 			return errors.WithStack(err)
 		}
 	} else {
+		if cfg.containerOnly {
+			return errors.New("image must be run inside container")
+		}
+
 		if err := mount.HostRoot(); err != nil {
 			return err
 		}
@@ -450,6 +483,13 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 
 	if !hostFound {
 		return errors.New("host does not match the configuration")
+	}
+
+	if !cfg.isContainer && len(cfg.prune) > 0 {
+		return errors.New("pruning might be done only inside container")
+	}
+	if err := pruneRoot(cfg.prune); err != nil {
+		return err
 	}
 
 	var sendLogsTask parallel.Task
@@ -842,6 +882,45 @@ func configureIPv6() error {
 		return err
 	}
 	return kernel.SetSysctl("net/ipv6/conf/all/accept_ra", "0")
+}
+
+func pruneRoot(prune []PruneFn) error {
+	var doPrune bool
+	for _, pf := range prune {
+		var err error
+		if doPrune, err = pf(); err != nil {
+			return err
+		}
+		if doPrune {
+			break
+		}
+	}
+	if !doPrune {
+		return nil
+	}
+
+	dir, err := os.Open(".")
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer dir.Close()
+
+	for {
+		entries, err := dir.ReadDir(10)
+		switch {
+		case err == nil:
+		case errors.Is(err, io.EOF):
+			return nil
+		default:
+			return errors.WithStack(err)
+		}
+
+		for _, entry := range entries {
+			if err := os.RemoveAll(entry.Name()); err != nil {
+				return errors.WithStack(err)
+			}
+		}
+	}
 }
 
 func runPrepares(ctx context.Context, prepare []PrepareFn) error {

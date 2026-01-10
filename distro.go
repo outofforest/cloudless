@@ -55,7 +55,7 @@ func buildDistro(ctx context.Context, config DistroConfig) (retConfigDir string,
 
 	logger.Get(ctx).Info("Building distro")
 
-	if err := os.RemoveAll(distroDirTmp); err != nil && !os.IsNotExist(err) {
+	if err := os.RemoveAll(distroDirTmp); err != nil {
 		return "", errors.WithStack(err)
 	}
 
