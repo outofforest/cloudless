@@ -83,7 +83,7 @@ var (
 
 var deployment = Deployment(
 	ImmediateKernelModules(DefaultKernelModules...),
-	DNS(DefaultDNS...),
+	dns.DNS(),
 	Host("pxe",
 		Gateway("10.0.0.1"),
 		Network("02:00:00:00:01:01", "igw", IPs("10.0.0.100/24", "fe80::1/10")),
