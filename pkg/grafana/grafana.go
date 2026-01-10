@@ -79,7 +79,8 @@ func Container(appName string, configurators ...Configurator) host.Configurator 
 				return errors.WithStack(err)
 			}
 
-			fDataSources, err := os.OpenFile(filepath.Join(dataSourcesDir, "datasources.yaml"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+			fDataSources, err := os.OpenFile(filepath.Join(dataSourcesDir, "datasources.yaml"),
+				os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 			if err != nil {
 				return errors.WithStack(err)
 			}
@@ -97,7 +98,8 @@ func Container(appName string, configurators ...Configurator) host.Configurator 
 				return errors.WithStack(err)
 			}
 
-			fDashboard, err := os.OpenFile(filepath.Join(dashboardsDir, "dashboard.yaml"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+			fDashboard, err := os.OpenFile(filepath.Join(dashboardsDir, "dashboard.yaml"),
+				os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 			if err != nil {
 				return errors.WithStack(err)
 			}
