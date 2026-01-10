@@ -117,14 +117,18 @@ func startEFI(ctx context.Context, deps types.DepsFunc) error {
 func start(bootConfigurator vm.Configurator) error {
 	return cloudless.Start(libvirtAddr,
 		vnet.NAT("cloudless-igw", "02:00:00:00:00:01", vnet.IPs("10.101.0.1/24")),
-		vm.Spec("service", 4, 2,
+		vm.Spec("cloudless-service", 4, 2,
 			bootConfigurator,
 			vm.Network("cloudless-igw", "vigw0", "02:00:00:00:00:02"),
 		),
-		vm.Spec("monitoring", 4, 2,
+		vm.Spec("cloudless-monitoring", 4, 2,
 			bootConfigurator,
 			vm.Network("cloudless-igw", "vigw1", "02:00:00:00:00:03"),
 			vm.Disk("monitoring", "vda", 20),
+		),
+		vm.Spec("cloudless-dev", 2, 1,
+			bootConfigurator,
+			vm.Network("cloudless-igw", "vigw2", "02:00:00:00:00:04"),
 		),
 	)
 }
