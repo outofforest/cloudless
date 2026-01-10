@@ -1,10 +1,13 @@
 package main
 
-import . "github.com/outofforest/cloudless" //nolint:staticcheck
+import (
+	. "github.com/outofforest/cloudless" //nolint:staticcheck
+	"github.com/outofforest/cloudless/pkg/dns"
+)
 
 var deployment = Deployment(
 	ImmediateKernelModules(DefaultKernelModules...),
-	DNS(DefaultDNS...),
+	dns.DNS(),
 
 	HostService,
 	HostMonitoring,

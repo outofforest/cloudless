@@ -2,7 +2,6 @@ package cloudless
 
 import (
 	"bytes"
-	"net"
 	"path/filepath"
 
 	"github.com/pkg/errors"
@@ -37,12 +36,6 @@ var (
 
 		// Storage.
 		{Name: "virtio-scsi"},
-	}
-
-	// DefaultDNS is the list of default DNS servers.
-	DefaultDNS = []string{
-		"1.1.1.1",
-		"8.8.8.8",
 	}
 )
 
@@ -262,19 +255,6 @@ func ImmediateKernelModules(modules ...kernel.Module) host.Configurator {
 			return nil
 		}
 		return host.ConfigureKernelModules(modules)
-	}
-}
-
-// DNS defines DNS servers.
-func DNS(dns ...string) host.Configurator {
-	ips := make([]net.IP, 0, len(dns))
-	for _, d := range dns {
-		ips = append(ips, parse.IP4(d))
-	}
-
-	return func(c *host.Configuration) error {
-		c.AddDNSes(ips...)
-		return nil
 	}
 }
 
