@@ -37,6 +37,8 @@ var HostService = Join(
 		dns.Service(
 			dns.Waves("10.101.0.3"),
 			dns.ACME(),
+			dns.ForwardFor("10.101.0.0/24"),
+			dns.ForwardTo(),
 			dns.Zone("example.local", "ns1.example.local", "wojtek@exw.co", 1,
 				dns.Nameservers("ns1.example.local", "ns2.example.local"),
 				dns.Domain("ns1.example.local", "10.101.0.155"),
