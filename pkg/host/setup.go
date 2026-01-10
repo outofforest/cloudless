@@ -973,7 +973,7 @@ func configureEnv(hostname string) error {
 	}
 
 	for k, v := range map[string]string{
-		"PATH":     "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin",
+		"PATH":     "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin",
 		"HOME":     "/root",
 		"USER":     "root",
 		"TERM":     "xterm-256color",

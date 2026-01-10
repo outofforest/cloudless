@@ -122,70 +122,37 @@ func Network(bridgeName, ifaceName, mac string) Configurator {
 	}
 }
 
-// RunImage runs image.
-func RunImage(imageTag string, configurators ...RunImageConfigurator) host.Configurator {
+// InstallImage installs image.
+func InstallImage(imageTag string) host.Configurator {
 	var c host.SealedConfiguration
 
-	icFileName := strings.ReplaceAll(imageTag, "/", "-")
 	return cloudless.Join(
 		cloudless.Configuration(&c),
 		cloudless.RequireContainers(imageTag),
 		cloudless.IsContainer(),
-		cloudless.Prune(func() (bool, error) {
-			_, err := os.Stat(icFileName)
-			switch {
-			case err == nil:
-				return false, nil
-			case os.IsNotExist(err):
-				return true, nil
-			default:
-				return false, errors.WithStack(err)
-			}
+		cloudless.Prune(prune(imageTag)),
+		cloudless.Prepare(func(ctx context.Context) error {
+			_, err := installImage(ctx, imageTag, c.ContainerMirrors())
+			return err
 		}),
+	)
+}
+
+// RunImage runs image.
+func RunImage(imageTag string, configurators ...RunImageConfigurator) host.Configurator {
+	var c host.SealedConfiguration
+
+	return cloudless.Join(
+		cloudless.Configuration(&c),
+		cloudless.RequireContainers(imageTag),
+		cloudless.IsContainer(),
+		cloudless.Prune(prune(imageTag)),
 		cloudless.Service("containerImage", parallel.Fail, func(ctx context.Context) error {
 			log := logger.Get(ctx)
 
-			var ic imageConfig
-			icRaw, err := os.ReadFile(icFileName)
-			switch {
-			case err == nil:
-				if err := json.Unmarshal(icRaw, &ic); err != nil {
-					return errors.WithStack(err)
-				}
-			case !os.IsNotExist(err):
-				return errors.WithStack(err)
-			default:
-				mirrors := c.ContainerMirrors()
-
-				if err := wait.HTTP(ctx, mirrors...); err != nil {
-					return err
-				}
-
-				m, err := fetchManifest(ctx, imageTag, mirrors)
-				if err != nil {
-					return err
-				}
-
-				ic, err = fetchConfig(ctx, imageTag, m, mirrors)
-				if err != nil {
-					return err
-				}
-
-				if err := inflateImage(ctx, imageTag, m, mirrors); err != nil {
-					return err
-				}
-
-				if icRaw, err = json.Marshal(ic); err != nil {
-					return errors.WithStack(err)
-				}
-
-				icFileNameTmp := icFileName + ".tmp"
-				if err := os.WriteFile(icFileNameTmp, icRaw, 0o600); err != nil {
-					return errors.WithStack(err)
-				}
-				if err := os.Rename(icFileNameTmp, icFileName); err != nil {
-					return errors.WithStack(err)
-				}
+			ic, err := installImage(ctx, imageTag, c.ContainerMirrors())
+			if err != nil {
+				return err
 			}
 
 			config := RunImageConfig{
@@ -446,6 +413,71 @@ func fetchConfig(ctx context.Context, imageTag string, m cache.Manifest, mirrors
 		return retry.Retriable(json.NewDecoder(resp.Body).Decode(&ic))
 	}); err != nil {
 		return imageConfig{}, err
+	}
+
+	return ic, nil
+}
+
+func icFileName(imageTag string) string {
+	return strings.ReplaceAll(imageTag, "/", "-")
+}
+
+func prune(imageTag string) host.PruneFn {
+	return func() (bool, error) {
+		_, err := os.Stat(icFileName(imageTag))
+		switch {
+		case err == nil:
+			return false, nil
+		case os.IsNotExist(err):
+			return true, nil
+		default:
+			return false, errors.WithStack(err)
+		}
+	}
+}
+
+func installImage(ctx context.Context, imageTag string, mirrors []string) (imageConfig, error) {
+	icFileName := icFileName(imageTag)
+
+	var ic imageConfig
+	icRaw, err := os.ReadFile(icFileName)
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(icRaw, &ic); err != nil {
+			return imageConfig{}, errors.WithStack(err)
+		}
+	case !os.IsNotExist(err):
+		return imageConfig{}, errors.WithStack(err)
+	default:
+		if err := wait.HTTP(ctx, mirrors...); err != nil {
+			return imageConfig{}, err
+		}
+
+		m, err := fetchManifest(ctx, imageTag, mirrors)
+		if err != nil {
+			return imageConfig{}, err
+		}
+
+		ic, err = fetchConfig(ctx, imageTag, m, mirrors)
+		if err != nil {
+			return imageConfig{}, err
+		}
+
+		if err := inflateImage(ctx, imageTag, m, mirrors); err != nil {
+			return imageConfig{}, err
+		}
+
+		if icRaw, err = json.Marshal(ic); err != nil {
+			return imageConfig{}, errors.WithStack(err)
+		}
+
+		icFileNameTmp := icFileName + ".tmp"
+		if err := os.WriteFile(icFileNameTmp, icRaw, 0o600); err != nil {
+			return imageConfig{}, errors.WithStack(err)
+		}
+		if err := os.Rename(icFileNameTmp, icFileName); err != nil {
+			return imageConfig{}, errors.WithStack(err)
+		}
 	}
 
 	return ic, nil
