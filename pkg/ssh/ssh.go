@@ -26,12 +26,13 @@ import (
 	"github.com/outofforest/parallel"
 )
 
-const (
-	// Port SSH server listens on.
-	Port = 22
+// Port SSH server listens on.
+const Port = 22
 
-	shellPath = "/usr/bin/bash"
-)
+var shells = []string{
+	"/usr/bin/bash",
+	"/bin/sh",
+}
 
 // Service returns SSH service.
 func Service(authorizedKeys ...string) host.Configurator {
@@ -75,6 +76,20 @@ func run(ctx context.Context, authorizedKeys []string) error {
 }
 
 func runServer(ctx context.Context, signer ssh.Signer, authKeys [][]byte) error {
+	var shell string
+loop:
+	for _, sh := range shells {
+		_, err := os.Stat(sh)
+		switch {
+		case err == nil:
+			shell = sh
+			break loop
+		case os.IsNotExist(err):
+		default:
+			return errors.WithStack(err)
+		}
+	}
+
 	l, err := net.Listen("tcp", ":"+strconv.Itoa(Port))
 	if err != nil {
 		return errors.WithStack(err)
@@ -117,7 +132,7 @@ func runServer(ctx context.Context, signer ssh.Signer, authKeys [][]byte) error 
 				}
 
 				spawn("client", parallel.Continue, func(ctx context.Context) error {
-					if err := client(ctx, conn, config); err != nil {
+					if err := client(ctx, conn, config, shell); err != nil {
 						logger.Get(ctx).Error("SSH connection failed.", zap.Error(err))
 					}
 
@@ -130,7 +145,7 @@ func runServer(ctx context.Context, signer ssh.Signer, authKeys [][]byte) error 
 	})
 }
 
-func client(ctx context.Context, conn net.Conn, config *ssh.ServerConfig) error {
+func client(ctx context.Context, conn net.Conn, config *ssh.ServerConfig, shell string) error {
 	defer conn.Close()
 
 	sConn, newCh, reqCh, err := ssh.NewServerConn(conn, config)
@@ -163,7 +178,7 @@ func client(ctx context.Context, conn net.Conn, config *ssh.ServerConfig) error 
 				spawn("channel", parallel.Continue, func(ctx context.Context) error {
 					switch chReq.ChannelType() {
 					case "session":
-						if err := sessionHandler(ctx, chReq, reqCh); err != nil {
+						if err := sessionHandler(ctx, chReq, shell, reqCh); err != nil {
 							logger.Get(ctx).Error("SSH session failed.", zap.Error(err))
 						}
 					case "direct-tcpip":
@@ -189,7 +204,12 @@ func client(ctx context.Context, conn net.Conn, config *ssh.ServerConfig) error 
 }
 
 //nolint:gocyclo
-func sessionHandler(ctx context.Context, chReq ssh.NewChannel, reqCh <-chan *ssh.Request) error {
+func sessionHandler(
+	ctx context.Context,
+	chReq ssh.NewChannel,
+	shell string,
+	reqCh <-chan *ssh.Request,
+) error {
 	ch, reqCh, err := chReq.Accept()
 	if err != nil {
 		return errors.WithStack(err)
@@ -321,7 +341,7 @@ func sessionHandler(ctx context.Context, chReq ssh.NewChannel, reqCh <-chan *ssh
 					defer ptm.Close()
 					defer pts.Close()
 
-					cmd := exec.Command(shellPath)
+					cmd := exec.Command(shell)
 					cmd.Dir = "/root"
 					cmd.SysProcAttr = &syscall.SysProcAttr{
 						Setctty: true,
