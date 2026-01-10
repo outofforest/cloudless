@@ -23,7 +23,6 @@ require (
 	github.com/outofforest/mass v0.2.1
 	github.com/outofforest/parallel v0.2.3
 	github.com/outofforest/proton v0.15.0
-	github.com/outofforest/resonance v0.21.0
 	github.com/outofforest/run v0.8.0
 	github.com/outofforest/tools v1.2.0
 	github.com/outofforest/wave v0.1.0
@@ -89,6 +88,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/outofforest/ioc/v2 v2.5.2 // indirect
+	github.com/outofforest/resonance v0.21.0 // indirect
 	github.com/outofforest/spin v0.3.1 // indirect
 	github.com/outofforest/varuint64 v0.1.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
