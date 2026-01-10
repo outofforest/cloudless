@@ -31,7 +31,7 @@ type ZoneConfig struct {
 	// MainNameserver is the address of the main DNS server
 	MainNameserver string
 
-	// Email is the email address of zone manager
+	// Email is the mailer address of zone manager
 	Email string
 
 	// Nameservers is the list of nameservers for the zone

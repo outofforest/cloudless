@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,10 +15,7 @@ import (
 	"github.com/outofforest/wave"
 )
 
-const (
-	// DomainPrefix is the domain prefix defined by ACME.
-	DomainPrefix = "_acme-challenge."
-)
+const domainPrefix = "_acme-challenge."
 
 // Handler is the ACME handler resolving challenges.
 type Handler struct {
@@ -88,7 +86,9 @@ func (h *Handler) Run(ctx context.Context) error {
 }
 
 // QueryTXT returns TXT challenge responses for domain.
-func (h *Handler) QueryTXT(domain string) []string {
+func (h *Handler) QueryTXT(query string) []string {
+	domain := strings.TrimPrefix(query, domainPrefix)
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -106,7 +106,9 @@ func (h *Handler) QueryTXT(domain string) []string {
 }
 
 // QueryCAA returns CAA responses for domain.
-func (h *Handler) QueryCAA(domain string) []CAA {
+func (h *Handler) QueryCAA(query string) []CAA {
+	domain := strings.TrimPrefix(query, domainPrefix)
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -182,4 +184,9 @@ type CAA struct {
 	Flags uint8
 	Tag   string
 	Value string
+}
+
+// IsACMEQuery checks if query is related to ACME.
+func IsACMEQuery(query string) bool {
+	return strings.HasPrefix(query, domainPrefix)
 }

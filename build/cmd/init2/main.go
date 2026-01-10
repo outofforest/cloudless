@@ -11,7 +11,6 @@ import (
 	containercache "github.com/outofforest/cloudless/pkg/container/cache"
 	"github.com/outofforest/cloudless/pkg/dns"
 	dnsdkim "github.com/outofforest/cloudless/pkg/dns/dkim"
-	"github.com/outofforest/cloudless/pkg/email"
 	"github.com/outofforest/cloudless/pkg/eye"
 	"github.com/outofforest/cloudless/pkg/grafana"
 	"github.com/outofforest/cloudless/pkg/host"
@@ -201,13 +200,6 @@ var deployment = Deployment(
 		acme.Service("acme", "wojtek@exw.co", acme.LetsEncryptStaging,
 			acme.Waves("10.0.3.2", "10.0.3.3"),
 			acme.Domains("dev.onem.network"),
-		),
-	),
-	Container("mailer",
-		Gateway("10.0.5.1"),
-		Network("02:00:00:00:07:02", "igw", IPs("10.0.5.2/24")),
-		email.Service(
-			email.DNSDKIMs("10.0.3.2", "10.0.3.3"),
 		),
 	),
 	Host("monitoring",
