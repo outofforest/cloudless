@@ -8,6 +8,7 @@ var deployment = Deployment(
 
 	HostService,
 	HostMonitoring,
+	HostDev,
 )
 
 func main() {
