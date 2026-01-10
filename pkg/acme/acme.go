@@ -40,12 +40,14 @@ const (
 )
 
 // Service returns new acme client service.
-func Service(storeDir, email string, dirConfig DirectoryConfig, configurators ...Configurator) host.Configurator {
+func Service(appName, email string, dirConfig DirectoryConfig, configurators ...Configurator) host.Configurator {
+	appDir := cloudless.AppDir(appName)
+
 	return cloudless.Service("acme", parallel.Fail, func(ctx context.Context) error {
 		config := Config{
 			Email:       email,
-			AccountFile: filepath.Join(storeDir, dirConfig.Name, accountFile),
-			CertFile:    filepath.Join(storeDir, dirConfig.Name, certFile),
+			AccountFile: filepath.Join(appDir, dirConfig.Name, accountFile),
+			CertFile:    filepath.Join(appDir, dirConfig.Name, certFile),
 			Directory:   dirConfig,
 		}
 

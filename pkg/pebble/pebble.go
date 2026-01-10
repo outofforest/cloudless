@@ -38,94 +38,100 @@ var (
 )
 
 // Container runs grafana container.
-func Container(appDir, dnsServer string) host.Configurator {
+func Container(appName, dnsServer string) host.Configurator {
+	appDir := cloudless.AppDir(appName)
+
 	return cloudless.Join(
-		container.AppMount(appDir),
-		cloudless.Prepare(prepareConfig, prepareCA),
+		container.AppMount(appName),
+		cloudless.Prepare(prepareConfig(appDir), prepareCA(appDir)),
 		container.RunImage(image,
-			container.EnvVar("HOME", container.AppDir),
+			container.EnvVar("HOME", appDir),
 			container.EnvVar("PEBBLE_WFE_NONCEREJECT", "0"),
-			container.WorkingDir(container.AppDir),
+			container.WorkingDir(appDir),
 			container.Cmd(
-				"-config", filepath.Join(container.AppDir, configFile),
+				"-config", filepath.Join(appDir, configFile),
 				"-dnsserver", dnsServer,
 			),
 		))
 }
 
-func prepareConfig(_ context.Context) error {
-	args := struct {
-		ListenPort uint16
-		CACertPath string
-		CAKeyPath  string
-	}{
-		ListenPort: Port,
-		CACertPath: filepath.Join(container.AppDir, caCerFile),
-		CAKeyPath:  filepath.Join(container.AppDir, caKeyFile),
-	}
+func prepareConfig(appDir string) host.PrepareFn {
+	return func(_ context.Context) error {
+		args := struct {
+			ListenPort uint16
+			CACertPath string
+			CAKeyPath  string
+		}{
+			ListenPort: Port,
+			CACertPath: filepath.Join(appDir, caCerFile),
+			CAKeyPath:  filepath.Join(appDir, caKeyFile),
+		}
 
-	f, err := os.OpenFile(filepath.Join(container.AppDir, configFile), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o400)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer f.Close()
+		f, err := os.OpenFile(filepath.Join(appDir, configFile), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o400)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		defer f.Close()
 
-	return errors.WithStack(configTemplate.Execute(f, args))
+		return errors.WithStack(configTemplate.Execute(f, args))
+	}
 }
 
-func prepareCA(_ context.Context) error {
-	caPrivateKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		return errors.WithStack(err)
-	}
+func prepareCA(appDir string) host.PrepareFn {
+	return func(_ context.Context) error {
+		caPrivateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+		if err != nil {
+			return errors.WithStack(err)
+		}
 
-	caTemplate := x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject: pkix.Name{
-			CommonName:         "Cloudless Certificate Authority",
-			OrganizationalUnit: []string{"cloudless"},
-		},
-		NotBefore: time.Now(),
-		NotAfter:  time.Now().AddDate(10, 0, 0),
-		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature |
-			x509.KeyUsageKeyEncipherment,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-	}
+		caTemplate := x509.Certificate{
+			SerialNumber: big.NewInt(1),
+			Subject: pkix.Name{
+				CommonName:         "Cloudless Certificate Authority",
+				OrganizationalUnit: []string{"cloudless"},
+			},
+			NotBefore: time.Now(),
+			NotAfter:  time.Now().AddDate(10, 0, 0),
+			KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature |
+				x509.KeyUsageKeyEncipherment,
+			BasicConstraintsValid: true,
+			IsCA:                  true,
+		}
 
-	caCertificateBytes, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caPrivateKey.PublicKey,
-		caPrivateKey)
-	if err != nil {
-		return errors.WithStack(err)
-	}
+		caCertificateBytes, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caPrivateKey.PublicKey,
+			caPrivateKey)
+		if err != nil {
+			return errors.WithStack(err)
+		}
 
-	caPrivateKeyBlock := &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(caPrivateKey),
-	}
+		caPrivateKeyBlock := &pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: x509.MarshalPKCS1PrivateKey(caPrivateKey),
+		}
 
-	caPrivateKeyFile, err := os.OpenFile(filepath.Join(container.AppDir, caKeyFile), os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		0o400)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer caPrivateKeyFile.Close()
+		caPrivateKeyFile, err := os.OpenFile(filepath.Join(appDir, caKeyFile), os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
+			0o400)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		defer caPrivateKeyFile.Close()
 
-	if err := pem.Encode(caPrivateKeyFile, caPrivateKeyBlock); err != nil {
-		return errors.WithStack(err)
-	}
+		if err := pem.Encode(caPrivateKeyFile, caPrivateKeyBlock); err != nil {
+			return errors.WithStack(err)
+		}
 
-	caCertificateBlock := &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: caCertificateBytes,
-	}
+		caCertificateBlock := &pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: caCertificateBytes,
+		}
 
-	caCertificateFile, err := os.OpenFile(filepath.Join(container.AppDir, caCerFile), os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		0o400)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer caCertificateFile.Close()
+		caCertificateFile, err := os.OpenFile(filepath.Join(appDir, caCerFile), os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
+			0o400)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		defer caCertificateFile.Close()
 
-	return errors.WithStack(pem.Encode(caCertificateFile, caCertificateBlock))
+		return errors.WithStack(pem.Encode(caCertificateFile, caCertificateBlock))
+	}
 }

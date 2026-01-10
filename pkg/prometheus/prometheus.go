@@ -25,22 +25,24 @@ const (
 var config []byte
 
 // Container runs prometheus container.
-func Container(appDir string) host.Configurator {
+func Container(appName string) host.Configurator {
+	appDir := cloudless.AppDir(appName)
+
 	return cloudless.Join(
-		container.AppMount(appDir),
+		container.AppMount(appName),
 		cloudless.Prepare(func(_ context.Context) error {
-			return errors.WithStack(os.WriteFile(filepath.Join(container.AppDir, "config.yaml"), config, 0o600))
+			return errors.WithStack(os.WriteFile(filepath.Join(appDir, "config.yaml"), config, 0o600))
 		}),
 		container.RunImage(image,
 			container.Cmd(
-				"--config.file", filepath.Join(container.AppDir, "config.yaml"),
+				"--config.file", filepath.Join(appDir, "config.yaml"),
 				"--web.listen-address", fmt.Sprintf("0.0.0.0:%d", Port),
 				"--web.enable-remote-write-receiver",
-				"--storage.tsdb.path", filepath.Join(container.AppDir, "data"),
+				"--storage.tsdb.path", filepath.Join(appDir, "data"),
 				"--storage.tsdb.retention.time=1m",
 				"--log.format=json",
 				"--log.level=info",
 			),
-			container.WorkingDir(container.AppDir),
+			container.WorkingDir(appDir),
 		))
 }

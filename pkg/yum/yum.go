@@ -22,7 +22,9 @@ import (
 const Port = 80
 
 // Service returns new yum repo service.
-func Service(repoRoot string, release uint64) host.Configurator {
+func Service(appName string, release uint64) host.Configurator {
+	appDir := cloudless.AppDir(appName)
+
 	var c host.SealedConfiguration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
@@ -32,7 +34,7 @@ func Service(repoRoot string, release uint64) host.Configurator {
 				return nil
 			}
 
-			repoDir := filepath.Join(repoRoot, strconv.FormatUint(release, 10))
+			repoDir := filepath.Join(appDir, strconv.FormatUint(release, 10))
 			if err := createRepo(ctx, repoDir, packages); err != nil {
 				return err
 			}
