@@ -34,8 +34,7 @@ import (
 	"github.com/outofforest/parallel"
 )
 
-// AppDir is the path inside container where application's directory is mounted.
-const AppDir = "/cloudless"
+const containersDir = cloudless.BaseDir + "/containers"
 
 var protectedFiles = map[string]struct{}{
 	"/etc/resolv.conf":  {},
@@ -46,9 +45,8 @@ var protectedFiles = map[string]struct{}{
 
 // Config represents container configuration.
 type Config struct {
-	Name         string
-	ContainerDir string
-	Networks     []NetworkConfig
+	Name     string
+	Networks []NetworkConfig
 }
 
 // NetworkConfig represents container's network configuration.
@@ -80,10 +78,9 @@ type RunImageConfig struct {
 type RunImageConfigurator func(config *RunImageConfig)
 
 // New creates container.
-func New(name, containerDir string, configurators ...Configurator) host.Configurator {
+func New(name string, configurators ...Configurator) host.Configurator {
 	config := Config{
-		Name:         name,
-		ContainerDir: containerDir,
+		Name: name,
 	}
 
 	for _, configurator := range configurators {
@@ -281,19 +278,22 @@ func Cmd(args ...string) RunImageConfigurator {
 }
 
 // AppMount returns docker volume definition for app's directory.
-func AppMount(hostAppDir string) host.Configurator {
-	return cloudless.Mount(hostAppDir, AppDir, true)
+func AppMount(appName string) host.Configurator {
+	appDir := cloudless.AppDir(appName)
+	return cloudless.Mount(appDir, appDir, true)
 }
 
 func command(ctx context.Context, config Config) (*exec.Cmd, io.Closer, error) {
-	if err := os.MkdirAll(config.ContainerDir, 0o700); err != nil {
+	containerDir := filepath.Join(containersDir, config.Name)
+
+	if err := os.MkdirAll(containerDir, 0o700); err != nil {
 		return nil, nil, errors.WithStack(err)
 	}
 
 	pipeReader, pipeWriter := io.Pipe()
 
 	cmd := exec.CommandContext(ctx, "/proc/self/exe")
-	cmd.Dir = config.ContainerDir
+	cmd.Dir = containerDir
 	cmd.Stdin = pipeReader
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

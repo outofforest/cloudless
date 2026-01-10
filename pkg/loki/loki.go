@@ -29,17 +29,21 @@ var (
 )
 
 // Container runs loki container.
-func Container(appDir string) host.Configurator {
+func Container(appName string) host.Configurator {
+	appDir := cloudless.AppDir(appName)
+
 	return cloudless.Join(
-		container.AppMount(appDir),
+		container.AppMount(appName),
 		cloudless.Prepare(func(_ context.Context) error {
 			data := struct {
+				AppDir   string
 				HTTPPort uint16
 			}{
+				AppDir:   appDir,
 				HTTPPort: Port,
 			}
 
-			f, err := os.OpenFile(filepath.Join(container.AppDir, "config.yaml"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+			f, err := os.OpenFile(filepath.Join(appDir, "config.yaml"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 			if err != nil {
 				return errors.WithStack(err)
 			}
@@ -49,8 +53,8 @@ func Container(appDir string) host.Configurator {
 		}),
 		container.RunImage(image,
 			container.Cmd(
-				"-config.file", filepath.Join(container.AppDir, "config.yaml"),
+				"-config.file", filepath.Join(appDir, "config.yaml"),
 			),
-			container.WorkingDir(container.AppDir),
+			container.WorkingDir(appDir),
 		))
 }

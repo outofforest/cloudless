@@ -15,6 +15,13 @@ import (
 	"github.com/outofforest/parallel"
 )
 
+const (
+	// BaseDir is the directory where all the files are stored.
+	BaseDir = "/cloudless"
+
+	appsDir = BaseDir + "/apps"
+)
+
 var (
 	// DefaultKernelModules is the reasonable list of kernel modules providing networking and storage.
 	DefaultKernelModules = []kernel.Module{
@@ -38,6 +45,11 @@ var (
 		"8.8.8.8",
 	}
 )
+
+// AppDir returns directory for app-specific data.
+func AppDir(name string) string {
+	return filepath.Join(appsDir, name)
+}
 
 // Deployment converts inlined spec into a slice.
 func Deployment(configurators ...host.Configurator) []host.Configurator {
@@ -275,6 +287,11 @@ func Mount(source, target string, writable bool) host.Configurator {
 		c.AddMount(source, target, writable)
 		return nil
 	}
+}
+
+// MountPersistentBase mounts provided block device to the base dir to provide persistency.
+func MountPersistentBase(dev string) host.Configurator {
+	return Mount(filepath.Join("/dev", dev), BaseDir, true)
 }
 
 // CreateInitramfs creates initramfs file.

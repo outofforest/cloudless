@@ -29,8 +29,9 @@ var (
 	datasourceTmpl     string
 	datasourceTemplate = template.Must(template.New("").Parse(datasourceTmpl))
 
-	//go:embed dashboard.yaml
-	dashboard []byte
+	//go:embed dashboard.tmpl.yaml
+	dashboardTmpl     string
+	dashboardTemplate = template.Must(template.New("").Parse(dashboardTmpl))
 )
 
 // Config is the configuration of grafana.
@@ -59,17 +60,18 @@ const (
 type Configurator func(config *Config)
 
 // Container runs grafana container.
-func Container(appDir string, configurators ...Configurator) host.Configurator {
+func Container(appName string, configurators ...Configurator) host.Configurator {
 	var config Config
+	appDir := cloudless.AppDir(appName)
 
 	for _, configurator := range configurators {
 		configurator(&config)
 	}
 
 	return cloudless.Join(
-		container.AppMount(appDir),
+		container.AppMount(appName),
 		cloudless.Prepare(func(_ context.Context) error {
-			dataSourcesDir := filepath.Join(container.AppDir, "provisioning", "datasources")
+			dataSourcesDir := filepath.Join(appDir, "provisioning", "datasources")
 			if err := os.RemoveAll(dataSourcesDir); err != nil {
 				return errors.WithStack(err)
 			}
@@ -77,24 +79,37 @@ func Container(appDir string, configurators ...Configurator) host.Configurator {
 				return errors.WithStack(err)
 			}
 
-			f, err := os.OpenFile(filepath.Join(dataSourcesDir, "datasources.yaml"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+			fDataSources, err := os.OpenFile(filepath.Join(dataSourcesDir, "datasources.yaml"),
+				os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 			if err != nil {
 				return errors.WithStack(err)
 			}
-			defer f.Close()
+			defer fDataSources.Close()
 
-			if err := datasourceTemplate.Execute(f, config.DataSources); err != nil {
+			if err := datasourceTemplate.Execute(fDataSources, config.DataSources); err != nil {
 				return errors.WithStack(err)
 			}
 
-			dashboardsDir := filepath.Join(container.AppDir, "provisioning", "dashboards")
+			dashboardsDir := filepath.Join(appDir, "provisioning", "dashboards")
 			if err := os.RemoveAll(dashboardsDir); err != nil {
 				return errors.WithStack(err)
 			}
 			if err := os.MkdirAll(dashboardsDir, 0o700); err != nil {
 				return errors.WithStack(err)
 			}
-			if err := os.WriteFile(filepath.Join(dashboardsDir, "dashboard.yaml"), dashboard, 0o400); err != nil {
+
+			fDashboard, err := os.OpenFile(filepath.Join(dashboardsDir, "dashboard.yaml"),
+				os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+			if err != nil {
+				return errors.WithStack(err)
+			}
+			defer fDashboard.Close()
+
+			if err := dashboardTemplate.Execute(fDashboard, struct {
+				AppDir string
+			}{
+				AppDir: appDir,
+			}); err != nil {
 				return errors.WithStack(err)
 			}
 
@@ -104,12 +119,12 @@ func Container(appDir string, configurators ...Configurator) host.Configurator {
 				}
 			}
 
-			return errors.WithStack(os.MkdirAll(filepath.Join(container.AppDir, "data"), 0o700))
+			return errors.WithStack(os.MkdirAll(filepath.Join(appDir, "data"), 0o700))
 		}),
 		container.RunImage(image,
 			container.EnvVar("GF_USERS_ALLOW_SIGN_UP", "false"),
-			container.EnvVar("GF_PATHS_PROVISIONING", filepath.Join(container.AppDir, "provisioning")),
-			container.EnvVar("GF_PATHS_DATA", filepath.Join(container.AppDir, "data")),
+			container.EnvVar("GF_PATHS_PROVISIONING", filepath.Join(appDir, "provisioning")),
+			container.EnvVar("GF_PATHS_DATA", filepath.Join(appDir, "data")),
 			container.EnvVar("GF_SERVER_HTTP_PORT", strconv.Itoa(Port)),
 			container.EnvVar("GF_LOG_MODE", "console"),
 			container.EnvVar("GF_LOG_CONSOLE_LEVEL", "info"),

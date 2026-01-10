@@ -49,7 +49,7 @@ var (
 )
 
 // Service returns new yum repo service.
-func Service(repoRoot string, release uint64) host.Configurator {
+func Service(appName string, release uint64) host.Configurator {
 	var c host.SealedConfiguration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
@@ -59,7 +59,7 @@ func Service(repoRoot string, release uint64) host.Configurator {
 				return nil
 			}
 
-			repoDir := filepath.Join(repoRoot, strconv.FormatUint(release, 10))
+			repoDir := filepath.Join(cloudless.AppDir(appName), strconv.FormatUint(release, 10))
 			return run(ctx, repoDir, images)
 		}),
 	)

@@ -2,6 +2,7 @@ package pxe
 
 import (
 	"context"
+	"path/filepath"
 
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
@@ -12,14 +13,14 @@ import (
 )
 
 // Service returns PXE service.
-func Service(efiDevPath string) host.Configurator {
+func Service(efiDev string) host.Configurator {
 	return cloudless.Join(
 		// VFAT is loaded to enable EFI partition mounting, to update the bootloader.
 		cloudless.KernelModules(kernel.Module{Name: "vfat"}),
 		cloudless.Service("pxe", parallel.Fail, func(ctx context.Context) error {
 			return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 				spawn("dhcp6", parallel.Fail, dhcp6.Run)
-				spawn("tftp", parallel.Fail, tftp.NewRun(efiDevPath))
+				spawn("tftp", parallel.Fail, tftp.NewRun(filepath.Join("/dev", efiDev)))
 				return nil
 			})
 		}),
