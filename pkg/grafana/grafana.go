@@ -21,7 +21,7 @@ const (
 	// Port is the port grafana listens on.
 	Port = 80
 
-	image = "grafana/grafana@sha256:58aeabeae706b990b3b1fc5ae8c97fd131921b2d6eb26a137ebaa91689d6ebfe"
+	image = "grafana/grafana@sha256:d3c4a16b994e381144063ca9b0ed4900c6c25cc7697613af6d380469a095ae3e"
 )
 
 var (
@@ -70,6 +70,9 @@ func Container(appDir string, configurators ...Configurator) host.Configurator {
 		container.AppMount(appDir),
 		cloudless.Prepare(func(_ context.Context) error {
 			dataSourcesDir := filepath.Join(container.AppDir, "provisioning", "datasources")
+			if err := os.RemoveAll(dataSourcesDir); err != nil {
+				return errors.WithStack(err)
+			}
 			if err := os.MkdirAll(dataSourcesDir, 0o700); err != nil {
 				return errors.WithStack(err)
 			}
@@ -85,6 +88,9 @@ func Container(appDir string, configurators ...Configurator) host.Configurator {
 			}
 
 			dashboardsDir := filepath.Join(container.AppDir, "provisioning", "dashboards")
+			if err := os.RemoveAll(dashboardsDir); err != nil {
+				return errors.WithStack(err)
+			}
 			if err := os.MkdirAll(dashboardsDir, 0o700); err != nil {
 				return errors.WithStack(err)
 			}

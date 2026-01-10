@@ -93,10 +93,6 @@ func New(name, containerDir string, configurators ...Configurator) host.Configur
 	return cloudless.Join(
 		cloudless.KernelModules(kernel.Module{Name: "veth"}),
 		cloudless.Service("container-"+name, parallel.Fail, func(ctx context.Context) error {
-			if err := os.RemoveAll(config.ContainerDir); err != nil && !os.IsNotExist(err) {
-				return errors.WithStack(err)
-			}
-
 			cmd, stdInCloser, err := command(ctx, config)
 			if err != nil {
 				return err
@@ -132,17 +128,26 @@ func Network(bridgeName, ifaceName, mac string) Configurator {
 // RunImage runs image.
 func RunImage(imageTag string, configurators ...RunImageConfigurator) host.Configurator {
 	var c host.SealedConfiguration
+
+	icFileName := strings.ReplaceAll(imageTag, "/", "-")
 	return cloudless.Join(
 		cloudless.Configuration(&c),
 		cloudless.RequireContainers(imageTag),
-		cloudless.Service("containerImage", parallel.Fail, func(ctx context.Context) error {
-			if !c.IsContainer() {
-				return errors.New("image must be run inside container")
+		cloudless.IsContainer(),
+		cloudless.Prune(func() (bool, error) {
+			_, err := os.Stat(icFileName)
+			switch {
+			case err == nil:
+				return false, nil
+			case os.IsNotExist(err):
+				return true, nil
+			default:
+				return false, errors.WithStack(err)
 			}
-
+		}),
+		cloudless.Service("containerImage", parallel.Fail, func(ctx context.Context) error {
 			log := logger.Get(ctx)
 
-			icFileName := strings.ReplaceAll(imageTag, "/", "-")
 			var ic imageConfig
 			icRaw, err := os.ReadFile(icFileName)
 			switch {

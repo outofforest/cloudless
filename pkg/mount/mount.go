@@ -115,12 +115,11 @@ func ContainerRootPrepare() error {
 		return errors.WithStack(err)
 	}
 
-	if err := os.MkdirAll("root/.old", 0o700); err != nil {
-		return errors.WithStack(err)
-	}
-
 	// PivotRoot requires new root to be on different mountpoint, so let's bind it to itself
 	if err := syscall.Mount(".", ".", "", syscall.MS_BIND|syscall.MS_PRIVATE, ""); err != nil {
+		return errors.WithStack(err)
+	}
+	if err := os.MkdirAll("root", 0o700); err != nil {
 		return errors.WithStack(err)
 	}
 	if err := syscall.Mount("root", "root", "", syscall.MS_BIND|syscall.MS_PRIVATE, ""); err != nil {
@@ -154,6 +153,10 @@ func untarDistro() error {
 }
 
 func pivotRoot() error {
+	if err := os.MkdirAll(".old", 0o700); err != nil {
+		return errors.WithStack(err)
+	}
+
 	if err := syscall.PivotRoot(".", ".old"); err != nil {
 		return errors.WithStack(err)
 	}

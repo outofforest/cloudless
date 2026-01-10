@@ -130,6 +130,22 @@ func Configuration(cfg *host.SealedConfiguration) host.Configurator {
 	}
 }
 
+// IsHost verifies that image is run on host.
+func IsHost() host.Configurator {
+	return func(c *host.Configuration) error {
+		c.HostOnly()
+		return nil
+	}
+}
+
+// IsContainer verifies that image is run inside container.
+func IsContainer() host.Configurator {
+	return func(c *host.Configuration) error {
+		c.ContainerOnly()
+		return nil
+	}
+}
+
 // Gateway defines gateway.
 func Gateway(gateway string) host.Configurator {
 	ip := parse.IP(gateway)
@@ -289,6 +305,14 @@ func AllocateHugePages(hugePages uint64) host.Configurator {
 func RequireContainers(images ...string) host.Configurator {
 	return func(c *host.Configuration) error {
 		c.RequireContainers(images...)
+		return nil
+	}
+}
+
+// Prune adds decision maker if root directory should be pruned.
+func Prune(prunes ...host.PruneFn) host.Configurator {
+	return func(c *host.Configuration) error {
+		c.Prune(prunes...)
 		return nil
 	}
 }
