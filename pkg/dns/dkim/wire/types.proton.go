@@ -10,8 +10,7 @@ import (
 )
 
 const (
-	id1 uint64 = iota + 1
-	id0
+	id0 uint64 = iota + 1
 )
 
 var _ proton.Marshaller = Marshaller{}
@@ -29,7 +28,6 @@ type Marshaller struct {
 func (m Marshaller) Messages() []any {
 	return []any {
 		MsgRequest{},
-		MsgAck{},
 	}
 }
 
@@ -37,8 +35,6 @@ func (m Marshaller) Messages() []any {
 func (m Marshaller) ID(msg any) (uint64, error) {
 	switch msg.(type) {
 	case *MsgRequest:
-		return id1, nil
-	case *MsgAck:
 		return id0, nil
 	default:
 		return 0, errors.Errorf("unknown message type %T", msg)
@@ -49,8 +45,6 @@ func (m Marshaller) ID(msg any) (uint64, error) {
 func (m Marshaller) Size(msg any) (uint64, error) {
 	switch msg2 := msg.(type) {
 	case *MsgRequest:
-		return size1(msg2), nil
-	case *MsgAck:
 		return size0(msg2), nil
 	default:
 		return 0, errors.Errorf("unknown message type %T", msg)
@@ -63,8 +57,6 @@ func (m Marshaller) Marshal(msg any, buf []byte) (retID, retSize uint64, retErr 
 
 	switch msg2 := msg.(type) {
 	case *MsgRequest:
-		return id1, marshal1(msg2, buf), nil
-	case *MsgAck:
 		return id0, marshal0(msg2, buf), nil
 	default:
 		return 0, 0, errors.Errorf("unknown message type %T", msg)
@@ -76,11 +68,8 @@ func (m Marshaller) Unmarshal(id uint64, buf []byte) (retMsg any, retSize uint64
 	defer helpers.RecoverUnmarshal(&retErr)
 
 	switch id {
-	case id1:
-		msg := &MsgRequest{}
-		return msg, unmarshal1(msg, buf), nil
 	case id0:
-		msg := &MsgAck{}
+		msg := &MsgRequest{}
 		return msg, unmarshal0(msg, buf), nil
 	default:
 		return nil, 0, errors.Errorf("unknown ID %d", id)
@@ -93,9 +82,7 @@ func (m Marshaller) MakePatch(msgDst, msgSrc any, buf []byte) (retID, retSize ui
 
 	switch msg2 := msgDst.(type) {
 	case *MsgRequest:
-		return id1, makePatch1(msg2, msgSrc.(*MsgRequest), buf), nil
-	case *MsgAck:
-		return id0, makePatch0(msg2, msgSrc.(*MsgAck), buf), nil
+		return id0, makePatch0(msg2, msgSrc.(*MsgRequest), buf), nil
 	default:
 		return 0, 0, errors.Errorf("unknown message type %T", msgDst)
 	}
@@ -107,44 +94,13 @@ func (m Marshaller) ApplyPatch(msg any, buf []byte) (retSize uint64, retErr erro
 
 	switch msg2 := msg.(type) {
 	case *MsgRequest:
-		return applyPatch1(msg2, buf), nil
-	case *MsgAck:
 		return applyPatch0(msg2, buf), nil
 	default:
 		return 0, errors.Errorf("unknown message type %T", msg)
 	}
 }
 
-func size0(m *MsgAck) uint64 {
-	var n uint64
-	return n
-}
-
-func marshal0(m *MsgAck, b []byte) uint64 {
-	var o uint64
-
-	return o
-}
-
-func unmarshal0(m *MsgAck, b []byte) uint64 {
-	var o uint64
-
-	return o
-}
-
-func makePatch0(m, mSrc *MsgAck, b []byte) uint64 {
-	var o uint64
-
-	return o
-}
-
-func applyPatch0(m *MsgAck, b []byte) uint64 {
-	var o uint64
-
-	return o
-}
-
-func size1(m *MsgRequest) uint64 {
+func size0(m *MsgRequest) uint64 {
 	var n uint64 = 2
 	{
 		// Provider
@@ -165,7 +121,7 @@ func size1(m *MsgRequest) uint64 {
 	return n
 }
 
-func marshal1(m *MsgRequest, b []byte) uint64 {
+func marshal0(m *MsgRequest, b []byte) uint64 {
 	var o uint64
 	{
 		// Provider
@@ -191,7 +147,7 @@ func marshal1(m *MsgRequest, b []byte) uint64 {
 	return o
 }
 
-func unmarshal1(m *MsgRequest, b []byte) uint64 {
+func unmarshal0(m *MsgRequest, b []byte) uint64 {
 	var o uint64
 	{
 		// Provider
@@ -220,7 +176,7 @@ func unmarshal1(m *MsgRequest, b []byte) uint64 {
 	return o
 }
 
-func makePatch1(m, mSrc *MsgRequest, b []byte) uint64 {
+func makePatch0(m, mSrc *MsgRequest, b []byte) uint64 {
 	var o uint64 = 1
 	{
 		// Provider
@@ -256,7 +212,7 @@ func makePatch1(m, mSrc *MsgRequest, b []byte) uint64 {
 	return o
 }
 
-func applyPatch1(m *MsgRequest, b []byte) uint64 {
+func applyPatch0(m *MsgRequest, b []byte) uint64 {
 	var o uint64 = 1
 	{
 		// Provider

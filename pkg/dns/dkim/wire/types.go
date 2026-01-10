@@ -5,6 +5,3 @@ type MsgRequest struct {
 	Provider  string
 	PublicKey []byte
 }
-
-// MsgAck acknowledges record creation.
-type MsgAck struct{}

@@ -3,95 +3,135 @@ package dkim
 import (
 	"context"
 	"encoding/base64"
-	"net"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/pkg/errors"
 
 	"github.com/outofforest/cloudless/pkg/dns/dkim/wire"
-	"github.com/outofforest/cloudless/pkg/tnet"
-	"github.com/outofforest/resonance"
+	"github.com/outofforest/parallel"
+	"github.com/outofforest/wave"
 )
 
 const (
 	// Port is the port DKIM server listens on.
 	Port = 81
 
-	// DomainPrefix is the domain prefix defined by ACME.
-	DomainPrefix = "._domainkey."
+	// RefreshInterval is the interval records should be refreshed with.
+	RefreshInterval = time.Minute
+
+	domainPrefix = "._domainkey."
 )
 
-// WireConfig is the DNS ACME service wire config.
-var WireConfig = resonance.Config{
-	MaxMessageSize: 4 * 1024,
+type record struct {
+	TimeAdded time.Time
+	PublicKey string
 }
 
-// Address returns address of dns acme endpoint.
-func Address(host string) string {
-	return tnet.Join(host, Port)
+// Handler is the DKIM handler accepting DNS record requests.
+type Handler struct {
+	waveServers []string
+
+	mu      sync.Mutex
+	records map[string]record
 }
 
-// Server is the DKIM server accepting DNS record requests.
-type Server struct {
-	port uint16
-
-	mu         sync.Mutex
-	publicKeys map[string]string
-}
-
-// NewServer creates new DKIM server.
-func NewServer(port uint16) *Server {
-	return &Server{
-		port:       port,
-		publicKeys: map[string]string{},
+// New creates new DKIM handler.
+func New(waveServers []string) *Handler {
+	return &Handler{
+		waveServers: waveServers,
+		records:     map[string]record{},
 	}
 }
 
-// Run runs ACME server.
-func (s *Server) Run(ctx context.Context) error {
-	l, err := net.ListenTCP("tcp", &net.TCPAddr{
-		IP:   net.IPv4zero,
-		Port: int(s.port),
-	})
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
+// Run runs DKIM handler.
+func (h *Handler) Run(ctx context.Context) error {
 	m := wire.NewMarshaller()
-	return resonance.RunServer(ctx, l, WireConfig,
-		func(ctx context.Context, c *resonance.Connection) error {
+
+	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+		waveClient, waveCh, err := wave.NewClient(wave.ClientConfig{
+			Servers:        h.waveServers,
+			MaxMessageSize: 1024,
+			Requests: []wave.RequestConfig{
+				{
+					Marshaller: m,
+					Messages:   []any{&wire.MsgRequest{}},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		spawn("wave", parallel.Fail, waveClient.Run)
+		spawn("clean", parallel.Fail, func(ctx context.Context) error {
 			for {
-				msg, err := c.ReceiveProton(m)
-				if err != nil {
-					return err
-				}
-
-				req, ok := msg.(*wire.MsgRequest)
-				if !ok {
-					return errors.New("unrecognized message received")
-				}
-
-				s.storeRequest(req)
-
-				if err := c.SendProton(&wire.MsgAck{}, m); err != nil {
-					return err
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				case <-time.After(time.Minute):
+					h.cleanRecords()
 				}
 			}
-		},
-	)
+		})
+		spawn("receiver", parallel.Fail, func(ctx context.Context) error {
+			for {
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				case msg := <-waveCh:
+					reqMsg, ok := msg.(*wire.MsgRequest)
+					if !ok {
+						return errors.New("unexpected message type")
+					}
+
+					h.storeRequest(reqMsg)
+				}
+			}
+		})
+
+		return nil
+	})
 }
 
 // PublicKey returns base64-encoded public key for provider.
-func (s *Server) PublicKey(provider string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (h *Handler) PublicKey(query, domain string) string {
+	provider := strings.TrimSuffix(query, domainPrefix+domain)
 
-	return s.publicKeys[provider]
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.records[provider].PublicKey
 }
 
-func (s *Server) storeRequest(req *wire.MsgRequest) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (h *Handler) storeRequest(req *wire.MsgRequest) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-	s.publicKeys[req.Provider] = base64.StdEncoding.EncodeToString(req.PublicKey)
+	h.records[req.Provider] = record{
+		TimeAdded: time.Now(),
+		PublicKey: base64.StdEncoding.EncodeToString(req.PublicKey),
+	}
+}
+
+func (h *Handler) cleanRecords() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for p, r := range h.records {
+		if time.Since(r.TimeAdded) > 5*RefreshInterval {
+			delete(h.records, p)
+		}
+	}
+}
+
+// IsDKIMQuery checks if query is related to DKIM.
+func IsDKIMQuery(query, domain string) bool {
+	return strings.HasSuffix(query, domainPrefix+domain)
+}
+
+// Domain returns DKIM domain for provider and domain.
+func Domain(provider, domain string) string {
+	return provider + domainPrefix + domain
 }

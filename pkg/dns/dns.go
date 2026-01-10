@@ -67,7 +67,7 @@ func Service(configurators ...Configurator) host.Configurator {
 func run(ctx context.Context, config Config) error {
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		var acmeServer *acme.Handler
-		var dkimServer *dkim.Server
+		var dkimServer *dkim.Handler
 		var forwardCh chan forwardRequest
 
 		if config.EnableACME {
@@ -75,7 +75,7 @@ func run(ctx context.Context, config Config) error {
 			spawn("acme", parallel.Fail, acmeServer.Run)
 		}
 		if config.EnableACME {
-			dkimServer = dkim.NewServer(config.DKIMPort)
+			dkimServer = dkim.New(config.WaveServers)
 			spawn("dkim", parallel.Fail, dkimServer.Run)
 		}
 		if len(config.ForwardFor) > 0 && len(config.ForwardTo) > 0 {
@@ -110,7 +110,7 @@ func runResolver(
 	config Config,
 	forwardCh chan<- forwardRequest,
 	acmeServer *acme.Handler,
-	dkimServer *dkim.Server,
+	dkimServer *dkim.Handler,
 ) error {
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{
 		IP:   net.IPv4zero,
@@ -333,7 +333,7 @@ func resolve(
 	b []byte,
 	queryID uint64,
 	acmeServer *acme.Handler,
-	dkimServer *dkim.Server,
+	dkimServer *dkim.Handler,
 	h *header,
 	maxMsgLength uint16,
 ) []byte {
@@ -463,10 +463,10 @@ func resolve(
 		values := zConfig.Texts[q.QName]
 		if len(values) == 0 {
 			switch {
-			case acmeServer != nil && strings.HasPrefix(q.QName, acme.DomainPrefix):
-				values = acmeServer.QueryTXT(strings.TrimPrefix(q.QName, acme.DomainPrefix))
-			case dkimServer != nil && strings.HasSuffix(q.QName, dkim.DomainPrefix+zConfig.Domain):
-				publicKey := dkimServer.PublicKey(strings.TrimSuffix(q.QName, dkim.DomainPrefix+zConfig.Domain))
+			case acmeServer != nil && acme.IsACMEQuery(q.QName):
+				values = acmeServer.QueryTXT(q.QName)
+			case dkimServer != nil && dkim.IsDKIMQuery(q.QName, zConfig.Domain):
+				publicKey := dkimServer.PublicKey(q.QName, zConfig.Domain)
 				if publicKey != "" {
 					values = []string{"v=DKIM1;k=rsa;p=" + publicKey}
 				}
@@ -507,7 +507,7 @@ func resolve(
 	case typeCAA:
 		var values []acme.CAA
 		if acmeServer != nil {
-			values = acmeServer.QueryCAA(strings.TrimPrefix(q.QName, acme.DomainPrefix))
+			values = acmeServer.QueryCAA(q.QName)
 		}
 
 		// FIXME (wojciech): This causes issues if DNS responds to queries but does not receive ACME challenges.
