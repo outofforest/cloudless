@@ -131,6 +131,10 @@ func Text(domain string, values ...string) ZoneConfigurator {
 
 // ForwardTo sets DNS servers for forwarding.
 func ForwardTo(servers ...string) Configurator {
+	if len(servers) == 0 {
+		servers = defaultServers
+	}
+
 	parsedIPs := make([]net.IP, 0, len(servers))
 	for _, ip := range servers {
 		parsedIPs = append(parsedIPs, parse.IP4(ip))
