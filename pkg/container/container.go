@@ -266,6 +266,7 @@ func command(ctx context.Context, config Config) (*exec.Cmd, io.Closer, error) {
 	cmd.Stderr = os.Stderr
 	cmd.Env = []string{host.ContainerEnvVar + "=" + config.Name}
 	cmd.SysProcAttr = &unix.SysProcAttr{
+		Setsid:    true,
 		Pdeathsig: unix.SIGKILL,
 		Cloneflags: unix.CLONE_NEWPID |
 			unix.CLONE_NEWNS |

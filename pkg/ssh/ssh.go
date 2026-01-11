@@ -345,7 +345,6 @@ func sessionHandler(
 					cmd.Dir = "/root"
 					cmd.SysProcAttr = &syscall.SysProcAttr{
 						Setctty: true,
-						Setsid:  true,
 					}
 					cmd.Stdin = pts
 					cmd.Stdout = pts

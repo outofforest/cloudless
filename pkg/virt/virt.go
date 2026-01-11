@@ -48,6 +48,10 @@ func DestroyVMs(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc) e
 				log := logger.Get(ctx)
 
 				for trial := 0; ; trial++ {
+					if ctx.Err() != nil {
+						return errors.WithStack(ctx.Err())
+					}
+
 					active, err := l.DomainIsActive(d)
 					if err != nil {
 						if IsError(err, libvirt.ErrNoDomain) {
@@ -160,6 +164,10 @@ func DestroyNetworks(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFu
 				log := logger.Get(ctx)
 
 				for trial := 0; ; trial++ {
+					if ctx.Err() != nil {
+						return errors.WithStack(ctx.Err())
+					}
+
 					active, err := l.NetworkIsActive(n)
 					if err != nil {
 						if IsError(err, libvirt.ErrNoNetwork) {

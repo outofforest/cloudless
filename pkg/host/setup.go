@@ -433,7 +433,7 @@ type Configurator func(c *Configuration) error
 func Run(ctx context.Context, configurators ...Configurator) error {
 	boxMetrics, boxMetricGatherer := newMetrics()
 	cfg := &Configuration{
-		isContainer:         isContainer(),
+		isContainer:         IsContainer(),
 		pkgRepo:             newPackageRepo(),
 		containerImagesRepo: newContainerImagesRepo(),
 		metricGatherers: prometheus.Gatherers{
@@ -1359,7 +1359,8 @@ func pruneVirt() error {
 	}))
 }
 
-func isContainer() bool {
+// IsContainer checks if we are inside container.
+func IsContainer() bool {
 	return os.Getenv(ContainerEnvVar) != ""
 }
 

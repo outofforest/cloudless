@@ -16,7 +16,9 @@ import (
 // Main is the entrypoint of the init process.
 func Main(deployment ...host.Configurator) {
 	run.New().Run(context.Background(), "cloudless", func(ctx context.Context) error {
-		fmt.Print(banner)
+		if !host.IsContainer() {
+			fmt.Print(banner)
+		}
 
 		err := host.Run(ctx, deployment...)
 		if errors.Is(err, ctx.Err()) {

@@ -68,8 +68,8 @@ require (
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/outofforest/archive v0.5.0 // indirect
 	github.com/outofforest/ioc/v2 v2.5.2 // indirect
-	github.com/outofforest/libexec v0.3.9 // indirect
-	github.com/outofforest/logger v0.6.0 // indirect
+	github.com/outofforest/libexec v0.4.1 // indirect
+	github.com/outofforest/logger v0.6.1 // indirect
 	github.com/outofforest/mass v0.2.1 // indirect
 	github.com/outofforest/parallel v0.2.3 // indirect
 	github.com/outofforest/proton v0.15.0 // indirect
