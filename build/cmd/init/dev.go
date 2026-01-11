@@ -6,6 +6,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/container"
 	"github.com/outofforest/cloudless/pkg/dev/mailer"
 	"github.com/outofforest/cloudless/pkg/dev/smtp"
+	"github.com/outofforest/cloudless/pkg/dev/webmail"
 	"github.com/outofforest/cloudless/pkg/pebble"
 	"github.com/outofforest/cloudless/pkg/shield"
 	"github.com/outofforest/cloudless/pkg/ssh"
@@ -13,6 +14,7 @@ import (
 
 var HostDev = Join(
 	Host("dev",
+		MountPersistentBase("vda"),
 		Network("02:00:00:00:00:04", "eth0", Master("igw")),
 		Gateway("10.101.0.1"),
 		Bridge("igw", "02:00:00:00:03:01", IPs("10.101.0.11/24")),
@@ -22,11 +24,14 @@ var HostDev = Join(
 		container.New("smtp",
 			container.Network("igw", "vsmtp", "02:00:00:00:03:03"),
 		),
+		container.New("webmail",
+			container.Network("igw", "vwebmail", "02:00:00:00:03:04"),
+		),
 		container.New("mailer",
-			container.Network("igw", "vmailer", "02:00:00:00:03:04"),
+			container.Network("igw", "vmailer", "02:00:00:00:03:05"),
 		),
 		container.New("busybox",
-			container.Network("igw", "vbusybox", "02:00:00:00:03:05"),
+			container.Network("igw", "vbusybox", "02:00:00:00:03:06"),
 		),
 	),
 	Container("pebble",
@@ -42,8 +47,14 @@ var HostDev = Join(
 		shield.Open("tcp4", "igw", smtp.IMAPPort),
 		smtp.Service(),
 	),
-	Container("mailer",
+	Container("webmail",
 		Network("02:00:00:00:03:04", "igw", IPs("10.101.0.14/24")),
+		Gateway("10.101.0.1"),
+		shield.Open("tcp4", "igw", webmail.Port),
+		webmail.Container("10.101.0.13:25", "10.101.0.13:143"),
+	),
+	Container("mailer",
+		Network("02:00:00:00:03:05", "igw", IPs("10.101.0.15/24")),
 		Gateway("10.101.0.1"),
 		mailer.Service("mailer", "wojtek@example.local", "mailer.example.local",
 			mailer.DNS("10.101.0.4:53"),
@@ -51,7 +62,7 @@ var HostDev = Join(
 		),
 	),
 	Container("busybox",
-		Network("02:00:00:00:03:05", "igw", IPs("10.101.0.15/24")),
+		Network("02:00:00:00:03:06", "igw", IPs("10.101.0.16/24")),
 		Gateway("10.101.0.1"),
 		busybox.Install(),
 		shield.Open("tcp4", "igw", ssh.Port),
