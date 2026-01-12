@@ -51,6 +51,7 @@ type HTTPIngress struct {
 func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 	bindings := map[string]*binding{}
 
+	var enableHttps bool
 	allowedDomains := map[string]struct{}{}
 	for eID, e := range i.cfg.Endpoints {
 		if i.endpoints[eID] != nil {
@@ -73,6 +74,7 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 			}
 		}
 		if e.HTTPSMode != HTTPSModeDisabled {
+			enableHttps = true
 			for _, b := range e.TLSBindings {
 				if bindings[b] == nil {
 					bindings[b] = newBinding(true)
@@ -96,39 +98,40 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 
 	m := wire.NewMarshaller()
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
-		waveClient, waveCh, err := wave.NewClient(wave.ClientConfig{
-			Servers:        i.cfg.WaveServers,
-			MaxMessageSize: 10 * 1024,
-			Requests: []wave.RequestConfig{
-				{
-					Marshaller: m,
-					Messages:   []any{&wire.MsgCertificate{}},
+		if enableHttps {
+			waveClient, waveCh, err := wave.NewClient(wave.ClientConfig{
+				Servers:        i.cfg.WaveServers,
+				MaxMessageSize: 10 * 1024,
+				Requests: []wave.RequestConfig{
+					{
+						Marshaller: m,
+						Messages:   []any{&wire.MsgCertificate{}},
+					},
 				},
-			},
-		})
-		if err != nil {
-			return err
-		}
+			})
+			if err != nil {
+				return err
+			}
 
-		spawn("wave", parallel.Fail, waveClient.Run)
-		spawn("certificate", parallel.Fail, func(ctx context.Context) error {
-			for {
-				select {
-				case <-ctx.Done():
-					return errors.WithStack(ctx.Err())
-				case msg := <-waveCh:
-					certMsg, ok := msg.(*wire.MsgCertificate)
-					if !ok {
-						return errors.New("unexpected message type")
-					}
+			spawn("wave", parallel.Fail, waveClient.Run)
+			spawn("certificate", parallel.Fail, func(ctx context.Context) error {
+				for {
+					select {
+					case <-ctx.Done():
+						return errors.WithStack(ctx.Err())
+					case msg := <-waveCh:
+						certMsg, ok := msg.(*wire.MsgCertificate)
+						if !ok {
+							return errors.New("unexpected message type")
+						}
 
-					if err := i.setCertificate(certMsg.Certificate); err != nil {
-						return err
+						if err := i.setCertificate(certMsg.Certificate); err != nil {
+							return err
+						}
 					}
 				}
-			}
-		})
-
+			})
+		}
 		for bAddr, b := range bindings {
 			cfg := thttp.Config{Handler: b.handler()}
 			if b.Secure {
