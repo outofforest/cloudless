@@ -102,7 +102,7 @@ var HostDev = Join(
 		dns.Service(
 			dns.Zone("dev.local", "ns1.dev.local", "wojtek@app.local", 1,
 				dns.Nameservers("ns1.dev.local"),
-				dns.Domain("ns1.dev.local", "10.255.0.2"),
+				dns.Domain("ns1.dev.local", "10.255.0.254"),
 				dns.Domain("mail.dev.local", "10.255.0.254"),
 			),
 		),

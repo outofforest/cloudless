@@ -108,7 +108,7 @@ var HostMonitoring = Join(
 		dns.Service(
 			dns.Zone("mon.local", "ns1.mon.local", "wojtek@app.local", 1,
 				dns.Nameservers("ns1.mon.local"),
-				dns.Domain("ns1.mon.local", "10.255.0.2"),
+				dns.Domain("ns1.mon.local", "10.255.0.253"),
 				dns.Domain("grafana.mon.local", "10.255.0.253"),
 			),
 		),
