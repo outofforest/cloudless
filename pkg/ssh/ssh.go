@@ -344,7 +344,7 @@ func sessionHandler(
 					cmd := exec.Command(shell)
 					cmd.Dir = "/root"
 					cmd.SysProcAttr = &syscall.SysProcAttr{
-						Setctty: true,
+						Ctty: int(pts.Fd()),
 					}
 					cmd.Stdin = pts
 					cmd.Stdout = pts

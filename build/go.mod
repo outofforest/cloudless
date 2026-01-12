@@ -5,7 +5,7 @@ go 1.25
 replace github.com/outofforest/cloudless => ../
 
 require (
-	github.com/outofforest/build/v2 v2.6.2
+	github.com/outofforest/build/v2 v2.7.0
 	github.com/outofforest/cloudless v0.0.0
 	github.com/outofforest/tools v1.4.3
 	github.com/samber/lo v1.52.0
@@ -68,7 +68,7 @@ require (
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/outofforest/archive v0.5.0 // indirect
 	github.com/outofforest/ioc/v2 v2.5.2 // indirect
-	github.com/outofforest/libexec v0.4.1 // indirect
+	github.com/outofforest/libexec v0.5.0 // indirect
 	github.com/outofforest/logger v0.6.1 // indirect
 	github.com/outofforest/mass v0.2.1 // indirect
 	github.com/outofforest/parallel v0.2.3 // indirect
