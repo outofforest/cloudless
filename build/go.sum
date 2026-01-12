@@ -259,12 +259,12 @@ github.com/opencontainers/image-spec v1.0.2 h1:9yCKha/T5XdGtO0q9Q9a6T5NUCsTn/DrB
 github.com/opencontainers/image-spec v1.0.2/go.mod h1:BtxoFyWECRxE4U/7sNtV5W15zMzWCbyJoFRP3s7yZA0=
 github.com/outofforest/archive v0.5.0 h1:i4qjGwpmw7wB1c0VQo5TV3cO019U7lvfJGL2P03tyFM=
 github.com/outofforest/archive v0.5.0/go.mod h1:ZHLm4PQMKmHY3kM8sYqfqr46/y0jLwXcQ/IwbQM2NOw=
-github.com/outofforest/build/v2 v2.6.2 h1:iAWsw0JqNFGbHJ8hxzTeA+DlyISF+fhYfawsR7+XJSM=
-github.com/outofforest/build/v2 v2.6.2/go.mod h1:1I0m+oqxOIt0u+uRe/cnJSolshYQIzGDMKLjpFItqng=
+github.com/outofforest/build/v2 v2.7.0 h1:Jd2oe8PPJzXOt6tAPpZ1c5SnSsU8ruIAbXPNqjv96WI=
+github.com/outofforest/build/v2 v2.7.0/go.mod h1:r0elWuT50yQPyJCzNBTVOimsjCiAwjGo9ZhcBmmznrQ=
 github.com/outofforest/ioc/v2 v2.5.2 h1:4mNzLuzoZTXL/cO0qf1TrSYvejMgbZz5OUhdLzAUbek=
 github.com/outofforest/ioc/v2 v2.5.2/go.mod h1:yI+FHuHchC/t6nVo3WJ96qEgCXdHQKFI/4wW2/75YcU=
-github.com/outofforest/libexec v0.4.1 h1:c+Nk6i+zUJUHohsC/6rnlBMTBqCM3eDI+fqXe/UNXig=
-github.com/outofforest/libexec v0.4.1/go.mod h1:BRHkw11B0V9k5Y7cYWUtcRuM2+l9Tt4DQBncjb+IHeg=
+github.com/outofforest/libexec v0.5.0 h1:r/06z211IJ6AINYda4Iue6HldziTslgL7wpbqiXPhL0=
+github.com/outofforest/libexec v0.5.0/go.mod h1:BRHkw11B0V9k5Y7cYWUtcRuM2+l9Tt4DQBncjb+IHeg=
 github.com/outofforest/logger v0.3.3/go.mod h1:+M5sO17Va9V33t28Qs9VqRQ8bFV501Uhq2PtQY+R3Ms=
 github.com/outofforest/logger v0.6.1 h1:oNxe+4wCYBP8Mve5Tpt/gpDpdGYzuJSTD5epi8U/YQ0=
 github.com/outofforest/logger v0.6.1/go.mod h1:BmKsJGfqah2NQw+yUjUZD1+uhZtTnfiJ2i1pU1HJgV8=
