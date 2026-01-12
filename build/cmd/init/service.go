@@ -1,16 +1,21 @@
 package main
 
 import (
+	"net/http"
+
 	. "github.com/outofforest/cloudless" //nolint:staticcheck
 	"github.com/outofforest/cloudless/pkg/acme"
 	"github.com/outofforest/cloudless/pkg/container"
 	"github.com/outofforest/cloudless/pkg/dns"
+	"github.com/outofforest/cloudless/pkg/grafana"
+	"github.com/outofforest/cloudless/pkg/ingress"
 	"github.com/outofforest/cloudless/pkg/shield"
 	"github.com/outofforest/cloudless/pkg/wave"
 )
 
 var HostService = Join(
 	Host("service",
+		MountPersistentBase("vda"),
 		Network("02:00:00:00:00:02", "eth0", Master("igw")),
 		Gateway("10.101.0.1"),
 		Bridge("igw", "02:00:00:00:01:01", IPs("10.101.0.2/24")),
@@ -22,6 +27,9 @@ var HostService = Join(
 		),
 		container.New("acme",
 			container.Network("igw", "vacme", "02:00:00:00:01:04"),
+		),
+		container.New("ingress",
+			container.Network("igw", "vingress", "02:00:00:00:01:05"),
 		),
 	),
 	Container("wave",
@@ -41,14 +49,25 @@ var HostService = Join(
 			dns.ForwardFor("10.101.0.0/24"),
 			dns.ForwardTo(),
 			dns.Zone("example.local", "ns1.example.local", "wojtek@exw.co", 1,
-				dns.Nameservers("ns1.example.local", "ns2.example.local"),
-				dns.MailExchange("smtp.example.local", 10),
+				dns.Nameservers("ns1.example.local"),
+				dns.MailExchange("smtp.dev.local", 10),
 				dns.Domain("ns1.example.local", "10.101.0.4"),
-				dns.Domain("smtp.example.local", "10.101.0.13"),
-				dns.Domain("mailer.example.local", "10.101.0.14"),
-				dns.Domain("example.local", "10.101.0.8"),
 				dns.Text("_dmarc.example.local", "v=DMARC1;p=quarantine"),
 				dns.Text("example.local", "v=spf1 a:mailer.example.local ~all"),
+				dns.Domain("mailer.example.local", "10.101.0.16"),
+				dns.Domain("example.local", "10.101.0.6"),
+				dns.Domain("grafana.example.local", "10.101.0.6"),
+			),
+			dns.Zone("mon.local", "ns1.mon.local", "wojtek@exw.co", 1,
+				dns.Nameservers("ns1.mon.local"),
+				dns.Domain("ns1.mon.local", "10.101.0.4"),
+				dns.Domain("grafana.mon.local", "10.101.0.13"),
+			),
+			dns.Zone("dev.local", "ns1.dev.local", "wojtek@exw.co", 1,
+				dns.Nameservers("ns1.dev.local"),
+				dns.Domain("ns1.dev.local", "10.101.0.4"),
+				dns.Domain("smtp.dev.local", "10.101.0.16"),
+				dns.Domain("mail.dev.local", "10.101.0.21"),
 			),
 		),
 	),
@@ -56,10 +75,26 @@ var HostService = Join(
 		Network("02:00:00:00:01:04", "igw", IPs("10.101.0.5/24")),
 		Gateway("10.101.0.1"),
 		container.AppMount("acme"),
-		shield.Open("tcp4", "igw", acme.Port),
-		acme.Service("acme", "wojtek@exw.co", acme.Pebble("10.101.0.12"),
+		acme.Service("acme", "wojtek@exw.co", acme.Pebble("10.101.0.15"),
 			acme.Waves("10.101.0.3"),
-			acme.Domains("test.example.local"),
+			acme.Domains("example.local", "*.example.local"),
+		),
+	),
+	Container("ingress",
+		Network("02:00:00:00:01:05", "igw", IPs("10.101.0.6/24")),
+		Gateway("10.101.0.1"),
+		shield.Open("tcp4", "igw", ingress.PortHTTP),
+		shield.Open("tcp4", "igw", ingress.PortHTTPS),
+		ingress.Service(
+			ingress.Waves("10.101.0.3"),
+			ingress.Endpoint("grafana",
+				ingress.Domains("grafana.example.local"),
+				ingress.Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete),
+				ingress.BodyLimit(4096),
+				ingress.EnableWebsockets(),
+				ingress.TLSBindings("10.101.0.6:443"),
+			),
+			ingress.Target("grafana", "10.101.0.9", grafana.Port, "/"),
 		),
 	),
 )

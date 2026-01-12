@@ -120,6 +120,7 @@ func start(bootConfigurator vm.Configurator) error {
 		vm.Spec("cloudless-service", 4, 2,
 			bootConfigurator,
 			vm.Network("cloudless-igw", "vigw0", "02:00:00:00:00:02"),
+			vm.Disk("service", "vda", 20),
 		),
 		vm.Spec("cloudless-monitoring", 4, 2,
 			bootConfigurator,

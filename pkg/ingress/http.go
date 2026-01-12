@@ -14,21 +14,18 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/ridge/must"
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 
+	"github.com/outofforest/cloudless/pkg/acme/wire"
 	"github.com/outofforest/cloudless/pkg/thttp"
 	"github.com/outofforest/cloudless/pkg/tnet"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
-)
-
-const (
-	certificateUnstableRefreshInterval = 10 * time.Second
-	certificateStableRefreshInterval   = time.Minute
+	"github.com/outofforest/wave"
 )
 
 // New creates new http ingress.
@@ -36,6 +33,7 @@ func New(cfg Config) *HTTPIngress {
 	return &HTTPIngress{
 		cfg:       cfg,
 		endpoints: map[EndpointID][]*endpoint{},
+		certs:     map[string]*tls.Certificate{},
 	}
 }
 
@@ -43,18 +41,24 @@ func New(cfg Config) *HTTPIngress {
 type HTTPIngress struct {
 	cfg       Config
 	endpoints map[EndpointID][]*endpoint
+	domains   []string
 
-	mu   sync.RWMutex
-	cert *tls.Certificate
+	mu    sync.RWMutex
+	certs map[string]*tls.Certificate
 }
 
 // Run runs the ingress servers.
 func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 	bindings := map[string]*binding{}
 
+	allowedDomains := map[string]struct{}{}
 	for eID, e := range i.cfg.Endpoints {
 		if i.endpoints[eID] != nil {
 			return errors.Errorf("duplicated http HTTPIngress endpoint: %s", eID)
+		}
+
+		for _, d := range e.AllowedDomains {
+			allowedDomains[d] = struct{}{}
 		}
 		var endpoints []*endpoint
 		if e.HTTPSMode != HTTPSModeOnly {
@@ -88,38 +92,38 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 		}
 	}
 
+	i.domains = lo.Keys(allowedDomains)
+
+	m := wire.NewMarshaller()
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+		waveClient, waveCh, err := wave.NewClient(wave.ClientConfig{
+			Servers:        i.cfg.WaveServers,
+			MaxMessageSize: 10 * 1024,
+			Requests: []wave.RequestConfig{
+				{
+					Marshaller: m,
+					Messages:   []any{&wire.MsgCertificate{}},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		spawn("wave", parallel.Fail, waveClient.Run)
 		spawn("certificate", parallel.Fail, func(ctx context.Context) error {
-			log := logger.Get(ctx).With(zap.String("url", i.cfg.CertificateURL))
-
-			ticker := time.NewTicker(certificateUnstableRefreshInterval)
-			defer ticker.Stop()
-
-		loop:
 			for {
 				select {
 				case <-ctx.Done():
 					return errors.WithStack(ctx.Err())
-				case <-ticker.C:
-					tlsCert, err := fetchCertificate(ctx, i.cfg.CertificateURL)
-					if err != nil {
-						log.Error("Fetching certificate failed", zap.Error(err))
-
-						if i.cert != nil && time.Until(i.cert.Leaf.NotAfter) < 2*certificateStableRefreshInterval {
-							ticker.Reset(certificateUnstableRefreshInterval)
-						}
-
-						continue loop
+				case msg := <-waveCh:
+					certMsg, ok := msg.(*wire.MsgCertificate)
+					if !ok {
+						return errors.New("unexpected message type")
 					}
 
-					if i.cert == nil || tlsCert.Leaf.NotAfter.After(i.cert.Leaf.NotAfter) {
-						i.setCertificate(tlsCert)
-					}
-
-					if time.Until(i.cert.Leaf.NotAfter) < 2*certificateStableRefreshInterval {
-						ticker.Reset(certificateUnstableRefreshInterval)
-					} else {
-						ticker.Reset(certificateStableRefreshInterval)
+					if err := i.setCertificate(certMsg.Certificate); err != nil {
+						return err
 					}
 				}
 			}
@@ -132,7 +136,7 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 					i.mu.RLock()
 					defer i.mu.RUnlock()
 
-					return i.cert, nil
+					return i.certs[info.ServerName], nil
 				}
 			}
 
@@ -168,11 +172,51 @@ func (i *HTTPIngress) registerTargets(endpointID EndpointID, targets []TargetCon
 	return nil
 }
 
-func (i *HTTPIngress) setCertificate(cert *tls.Certificate) {
+func (i *HTTPIngress) setCertificate(cert []byte) error {
+	tlsCert, err := parseCertificate(cert)
+	if err != nil {
+		return err
+	}
+
+	supportedDomains := map[string]struct{}{}
+	if tlsCert.Leaf.Subject.CommonName != "" {
+		supportedDomains[tlsCert.Leaf.Subject.CommonName] = struct{}{}
+	}
+	for _, n := range tlsCert.Leaf.DNSNames {
+		if n != "" {
+			supportedDomains[n] = struct{}{}
+		}
+	}
+
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
-	i.cert = cert
+	for _, d := range i.domains {
+		if containsDomain(d, supportedDomains) {
+			existingCert, exists := i.certs[d]
+			if !exists || tlsCert.Leaf.NotAfter.After(existingCert.Leaf.NotAfter) {
+				i.certs[d] = tlsCert
+			}
+		}
+	}
+
+	return nil
+}
+
+func containsDomain(domain string, domains map[string]struct{}) bool {
+	if _, exists := domains[domain]; exists {
+		return true
+	}
+	for {
+		pos := strings.Index(domain, ".")
+		if pos < 0 {
+			return false
+		}
+		domain = domain[pos+1:]
+		if _, exists := domains["*."+domain]; exists {
+			return true
+		}
+	}
 }
 
 type endpoint struct {
@@ -196,7 +240,7 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hostPort := strings.SplitN(r.Host, ":", 2)
-	if len(e.allowedDomains) > 0 && !e.allowedDomains[hostPort[0]] {
+	if !e.allowedDomains[hostPort[0]] {
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
@@ -466,23 +510,7 @@ func newEndpoint(address string, secure bool, id EndpointID, cfg EndpointConfig)
 	}
 }
 
-func fetchCertificate(ctx context.Context, url string) (*tls.Certificate, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	defer resp.Body.Close()
-
-	cert, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
+func parseCertificate(cert []byte) (*tls.Certificate, error) {
 	tlsCert := &tls.Certificate{}
 	for {
 		var block *pem.Block
@@ -510,6 +538,7 @@ func fetchCertificate(ctx context.Context, url string) (*tls.Certificate, error)
 		return nil, errors.New("certificate chain not present")
 	}
 
+	var err error
 	tlsCert.Leaf, err = x509.ParseCertificate(tlsCert.Certificate[0])
 	if err != nil {
 		return nil, errors.WithStack(err)

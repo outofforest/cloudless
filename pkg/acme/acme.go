@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -171,143 +172,168 @@ func runIssuer(ctx context.Context, config Config, waveClient *wave.Client) erro
 
 		log.Info("Issuing certificate")
 
-		err := parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
-			spawn("order", parallel.Exit, func(ctx context.Context) (retErr error) {
-				log := logger.Get(ctx)
+		err := func() (retErr error) {
+			log := logger.Get(ctx)
 
-				defer func() {
-					if retErr != nil {
-						waitCh = time.After(rerunInterval)
-					}
-				}()
-
-				acmeOrder, err := client.AuthorizeOrder(ctx, goacme.DomainIDs(config.Domains...))
-				if err != nil {
-					return errors.WithStack(err)
+			defer func() {
+				if retErr != nil {
+					waitCh = time.After(rerunInterval)
 				}
+			}()
 
-				switch acmeOrder.Status {
-				case goacme.StatusPending:
-					o := order{
-						OrderURI:   acmeOrder.URI,
-						Challenges: make([]challenge, 0, len(acmeOrder.AuthzURLs)),
-					}
-					for _, authzURL := range acmeOrder.AuthzURLs {
-						authZ, err := client.GetAuthorization(ctx, authzURL)
-						if err != nil {
-							return errors.WithStack(err)
-						}
-						if authZ.Identifier.Type != "dns" {
-							continue
-						}
+			acmeOrder, err := client.AuthorizeOrder(ctx, goacme.DomainIDs(config.Domains...))
+			if err != nil {
+				return errors.WithStack(err)
+			}
 
-						for _, acmeChallenge := range authZ.Challenges {
-							if acmeChallenge.Status != "pending" || acmeChallenge.Type != "dns-01" {
-								continue
-							}
-
-							o.Challenges = append(o.Challenges, challenge{
-								Domain:    authZ.Identifier.Value,
-								AuthZURI:  authZ.URI,
-								Challenge: acmeChallenge,
-							})
-						}
-					}
-
-					req := &dnsacmewire.MsgRequest{
-						Provider:   config.Directory.Provider,
-						AccountURI: string(client.KID),
-						Challenges: make([]dnsacmewire.Challenge, 0, len(o.Challenges)),
-					}
-					for _, ch := range o.Challenges {
-						auth, err := client.DNS01ChallengeRecord(ch.Challenge.Token)
-						if err != nil {
-							return errors.WithStack(err)
-						}
-
-						req.Challenges = append(req.Challenges, dnsacmewire.Challenge{
-							Domain: ch.Domain,
-							Value:  auth,
-						})
-					}
-
-					if err := waveClient.Send(req, mDNSACME); err != nil {
-						return err
-					}
-
-					for _, ch := range o.Challenges {
-						if _, err := client.Accept(ctx, ch.Challenge); err != nil {
-							return errors.WithStack(err)
-						}
-
-						if _, err := client.WaitAuthorization(ctx, ch.AuthZURI); err != nil {
-							return errors.WithStack(err)
-						}
-					}
-
-					acmeOrder, err = client.WaitOrder(ctx, o.OrderURI)
+			switch acmeOrder.Status {
+			case goacme.StatusPending:
+				o := order{
+					OrderURI:   acmeOrder.URI,
+					Challenges: make([]challenge, 0, len(acmeOrder.AuthzURLs)),
+				}
+				for _, authzURL := range acmeOrder.AuthzURLs {
+					authZ, err := client.GetAuthorization(ctx, authzURL)
 					if err != nil {
 						return errors.WithStack(err)
 					}
-				case goacme.StatusReady:
-				default:
-					return errors.Errorf("invalid order status %q", acmeOrder.Status)
+					if authZ.Identifier.Type != "dns" {
+						continue
+					}
+
+					for _, acmeChallenge := range authZ.Challenges {
+						if acmeChallenge.Status != "pending" || acmeChallenge.Type != "dns-01" {
+							continue
+						}
+
+						o.Challenges = append(o.Challenges, challenge{
+							Domain:    authZ.Identifier.Value,
+							AuthZURI:  authZ.URI,
+							Challenge: acmeChallenge,
+						})
+					}
 				}
 
-				certKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-				if err != nil {
-					return errors.WithStack(err)
+				req := &dnsacmewire.MsgRequest{
+					Provider:   config.Directory.Provider,
+					AccountURI: string(client.KID),
+					Challenges: make([]dnsacmewire.Challenge, 0, len(o.Challenges)),
+				}
+				for _, ch := range o.Challenges {
+					auth, err := client.DNS01ChallengeRecord(ch.Challenge.Token)
+					if err != nil {
+						return errors.WithStack(err)
+					}
+
+					req.Challenges = append(req.Challenges, dnsacmewire.Challenge{
+						Domain: ch.Domain,
+						Value:  auth,
+					})
 				}
 
-				certReq := &x509.CertificateRequest{
-					Subject:  pkix.Name{CommonName: config.Domains[0]},
-					DNSNames: config.Domains,
-				}
-				csr, err := x509.CreateCertificateRequest(rand.Reader, certReq, certKey)
-				if err != nil {
-					return errors.WithStack(err)
-				}
-
-				chain, _, err := client.CreateOrderCert(ctx, acmeOrder.FinalizeURL, csr, true)
-				if err != nil {
-					return errors.WithStack(err)
-				}
-
-				if len(chain) == 0 {
-					return errors.New("empty certificate chain")
-				}
-
-				expirationTime, err := certificateExpirationTime(chain[0])
-				if err != nil {
-					return errors.WithStack(err)
-				}
-
-				certRaw, err := storeCertificate(config.CertFile, certKey, chain)
-				if err != nil {
-					return errors.WithStack(err)
-				}
-
-				if err := waveClient.Send(&wire.MsgCertificate{
-					Certificate: certRaw,
-				}, mACME); err != nil {
+				if err := waveClient.Send(req, mDNSACME); err != nil {
 					return err
 				}
 
-				waitCh = renewTimerFunc(expirationTime)
+				// Wait for DNS to set up.
+				// FIXME:wojciech Query DNS for records.
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				case <-time.After(5 * time.Second):
+				}
 
-				log.Info("Certificate issued", zap.Time("expirationTime", expirationTime))
+				for _, ch := range o.Challenges {
+					if _, err := client.Accept(ctx, ch.Challenge); err != nil {
+						return errors.WithStack(err)
+					}
 
-				return nil
-			})
+					if _, err := client.WaitAuthorization(ctx, ch.AuthZURI); err != nil {
+						return errors.WithStack(err)
+					}
+				}
+
+				acmeOrder, err = client.WaitOrder(ctx, o.OrderURI)
+				if err != nil {
+					return errors.WithStack(err)
+				}
+			case goacme.StatusReady:
+			default:
+				return errors.Errorf("invalid order status %q", acmeOrder.Status)
+			}
+
+			certKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+			if err != nil {
+				return errors.WithStack(err)
+			}
+
+			certReq := &x509.CertificateRequest{
+				Subject:  pkix.Name{CommonName: config.Domains[0]},
+				DNSNames: config.Domains,
+			}
+			csr, err := x509.CreateCertificateRequest(rand.Reader, certReq, certKey)
+			if err != nil {
+				return errors.WithStack(err)
+			}
+
+			chain, _, _ := client.CreateOrderCert(ctx, acmeOrder.FinalizeURL, csr, true)
+			for chain == nil {
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				case <-time.After(time.Second):
+				}
+
+				if acmeOrder, err = client.GetOrder(ctx, acmeOrder.URI); err != nil {
+					return errors.WithStack(err)
+				}
+
+				var err error
+				if chain, err = client.FetchCert(ctx, acmeOrder.CertURL, true); err != nil {
+					return errors.WithStack(err)
+				}
+			}
+
+			if len(chain) == 0 {
+				return errors.New("empty certificate chain")
+			}
+
+			expirationTime, err := certificateExpirationTime(chain[0])
+			if err != nil {
+				return errors.WithStack(err)
+			}
+
+			certRaw, err := storeCertificate(config.CertFile, certKey, chain)
+			if err != nil {
+				return errors.WithStack(err)
+			}
+
+			if err := waveClient.Send(&wire.MsgCertificate{
+				Certificate: certRaw,
+			}, mACME); err != nil {
+				return err
+			}
+
+			waitCh = renewTimerFunc(expirationTime)
+
+			log.Info("Certificate issued", zap.Time("expirationTime", expirationTime))
 
 			return nil
-		})
+		}()
 
 		switch {
 		case err == nil:
 		case errors.Is(err, ctx.Err()):
 			return err
 		case errors.Is(err, context.Canceled):
+		case strings.Contains(err.Error(), "accountDoesNotExist"):
+			if err := os.Remove(config.AccountFile); err != nil && !os.IsNotExist(err) {
+				return errors.WithStack(err)
+			}
+			if err := os.Remove(config.CertFile); err != nil && !os.IsNotExist(err) {
+				return errors.WithStack(err)
+			}
+			return err
 		default:
 			log.Error("Certificate issuance failed", zap.Error(err))
 		}

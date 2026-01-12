@@ -1,9 +1,11 @@
 package ingress
 
+import "github.com/outofforest/cloudless/pkg/wave"
+
 // Config defines configuration of HTTP HTTPIngress.
 type Config struct {
-	// CertificateURL is the URL delivering certificate.
-	CertificateURL string
+	// WaveServers are addresses of wave servers.
+	WaveServers []string
 
 	// Targets defines target registrations for endpoint.
 	Targets map[EndpointID][]TargetConfig
@@ -75,15 +77,17 @@ type EndpointConfig struct {
 // Configurator is the function configuring ingress.
 type Configurator func(c *Config)
 
-// EndpointConfigurator is the function configuring endpoint.
-type EndpointConfigurator func(c *EndpointConfig)
-
-// CertificateURL configures URL used to retrieve TLS certificate.
-func CertificateURL(certURL string) Configurator {
+// Waves adds wave servers to send challenge requests to.
+func Waves(waves ...string) Configurator {
 	return func(c *Config) {
-		c.CertificateURL = certURL
+		for _, w := range waves {
+			c.WaveServers = append(c.WaveServers, wave.Address(w))
+		}
 	}
 }
+
+// EndpointConfigurator is the function configuring endpoint.
+type EndpointConfigurator func(c *EndpointConfig)
 
 // Target adds target for an endpoint.
 func Target(endpointID EndpointID, host string, port uint16, path string) Configurator {
