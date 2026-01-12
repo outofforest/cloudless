@@ -1,4 +1,4 @@
-package main
+package dev
 
 import (
 	"net/http"
@@ -17,7 +17,16 @@ import (
 	"github.com/outofforest/cloudless/pkg/ntp"
 	"github.com/outofforest/cloudless/pkg/prometheus"
 	"github.com/outofforest/cloudless/pkg/shield"
-	"github.com/outofforest/cloudless/pkg/ssh"
+)
+
+const (
+	monitoringIP = "10.255.0.253"
+
+	// PrometheusAddr is the address of prometheus service.
+	PrometheusAddr = "http://" + monitoringIP + ":81"
+
+	// LokiAddr is the address of loki service.
+	LokiAddr = "http://" + monitoringIP + ":82"
 )
 
 var monContainer = BoxFactory(
@@ -27,16 +36,14 @@ var monContainer = BoxFactory(
 	containercache.Mirrors("http://10.255.0.254:81"),
 )
 
-var HostMonitoring = Join(
-	Box("monitoring",
+var monitoringBox = Join(
+	Box("mon",
 		dns.DNS(),
 		eye.SendMetrics("http://10.0.0.3"),
 		eye.RemoteLogging("http://10.0.0.4"),
 		eye.SystemMonitor(),
 		acpi.PowerService(),
 		ntp.Service(),
-		shield.Open("tcp4", "igw", ssh.Port),
-		ssh.Service("AAAAC3NzaC1lZDI1NTE5AAAAIEcJvvtOBgTsm3mq3Sg8cjn6Mz/vC9f3k6a89ZOjIyF6"),
 
 		MountPersistentBase("vda"),
 		Network("fc:ff:ff:fe:00:01", "igw", IPs("10.255.0.253/24")),
@@ -63,7 +70,7 @@ var HostMonitoring = Join(
 			container.Network("brint", "vdns", "fc:ff:ff:fe:01:06"),
 		),
 	),
-	monContainer("grafana",
+	monContainer("mon-grafana",
 		Network("fc:ff:ff:fe:01:02", "igw", IPs("10.0.0.2/24")),
 		Gateway("10.0.0.1"),
 		shield.Open("tcp4", "igw", grafana.Port),
@@ -73,19 +80,19 @@ var HostMonitoring = Join(
 			grafana.Dashboards(host.DashboardBoxes, eye.Dashboard),
 		),
 	),
-	monContainer("prometheus",
+	monContainer("mon-prometheus",
 		Network("fc:ff:ff:fe:01:03", "igw", IPs("10.0.0.3/24")),
 		Gateway("10.0.0.1"),
 		shield.Open("tcp4", "igw", prometheus.Port),
 		prometheus.Container("prometheus"),
 	),
-	monContainer("loki",
+	monContainer("mon-loki",
 		Network("fc:ff:ff:fe:01:04", "igw", IPs("10.0.0.4/24")),
 		Gateway("10.0.0.1"),
 		shield.Open("tcp4", "igw", loki.Port),
 		loki.Container("loki"),
 	),
-	monContainer("ingress",
+	monContainer("mon-ingress",
 		Network("fc:ff:ff:fe:01:05", "igw", IPs("10.0.0.5/24")),
 		Gateway("10.0.0.1"),
 		shield.Open("tcp4", "igw", ingress.PortHTTP),
@@ -101,7 +108,7 @@ var HostMonitoring = Join(
 			ingress.Target("grafana", "10.0.0.2", grafana.Port, "/"),
 		),
 	),
-	monContainer("dns",
+	monContainer("mon-dns",
 		Network("fc:ff:ff:fe:01:06", "igw", IPs("10.0.0.6/24")),
 		Gateway("10.0.0.1"),
 		shield.Open("udp4", "igw", dns.Port),

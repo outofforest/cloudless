@@ -10,6 +10,7 @@ import (
 	"github.com/outofforest/build/v2/pkg/tools"
 	"github.com/outofforest/build/v2/pkg/types"
 	"github.com/outofforest/cloudless"
+	"github.com/outofforest/cloudless/pkg/dev"
 	"github.com/outofforest/cloudless/pkg/vm"
 	"github.com/outofforest/cloudless/pkg/vnet"
 	"github.com/outofforest/tools/pkg/tools/golang"
@@ -115,36 +116,27 @@ func startEFI(ctx context.Context, deps types.DepsFunc) error {
 }
 
 func start(bootConfigurator vm.Configurator) error {
-	return cloudless.Start(libvirtAddr,
+	return dev.Start(libvirtAddr,
 		vnet.NAT("cloudless-igw", "02:00:00:00:00:01", vnet.IPs("10.255.0.1/24")),
 		vm.Spec("cloudless-service", 4, 2,
 			bootConfigurator,
 			vm.Network("cloudless-igw", "vigw0", "02:00:00:00:00:02"),
 			vm.Disk("service", "vda", 20),
 		),
-		vm.Spec("cloudless-monitoring", 4, 2,
-			bootConfigurator,
-			vm.Network("cloudless-igw", "vigw1", "fc:ff:ff:fe:00:01"),
-			vm.Disk("monitoring", "vda", 20),
-		),
-		vm.Spec("cloudless-dev", 2, 1,
-			bootConfigurator,
-			vm.Network("cloudless-igw", "vigw2", "fc:ff:ff:ff:00:01"),
-			vm.Disk("dev", "vda", 20),
-		),
+		dev.VMs(bootConfigurator),
 	)
 }
 
 func stop(ctx context.Context, deps types.DepsFunc) error {
-	return cloudless.Stop(ctx, libvirtAddr)
+	return dev.Stop(ctx, libvirtAddr)
 }
 
 func destroy(ctx context.Context, deps types.DepsFunc) error {
-	return cloudless.Destroy(ctx, libvirtAddr)
+	return dev.Destroy(ctx, libvirtAddr)
 }
 
 func verify(ctx context.Context, deps types.DepsFunc) error {
-	return cloudless.Verify(ctx, config)
+	return dev.Verify(ctx, config)
 }
 
 func hostPath(path string) string {

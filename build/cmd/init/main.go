@@ -2,13 +2,14 @@ package main
 
 import (
 	. "github.com/outofforest/cloudless" //nolint:staticcheck
+	"github.com/outofforest/cloudless/pkg/dev"
 )
 
 var deployment = Deployment(
 	ImmediateKernelModules(DefaultKernelModules...),
+	dev.Boxes(),
+
 	HostService,
-	HostMonitoring,
-	HostDev,
 )
 
 func main() {

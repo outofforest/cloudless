@@ -4,6 +4,7 @@ import (
 	. "github.com/outofforest/cloudless" //nolint:staticcheck
 	"github.com/outofforest/cloudless/pkg/acme"
 	"github.com/outofforest/cloudless/pkg/container"
+	"github.com/outofforest/cloudless/pkg/dev"
 	"github.com/outofforest/cloudless/pkg/dev/mailer"
 	"github.com/outofforest/cloudless/pkg/dns"
 	"github.com/outofforest/cloudless/pkg/shield"
@@ -49,7 +50,7 @@ var HostService = Join(
 				dns.Nameservers("ns1.app.local"),
 				dns.MailExchange("smtp.app.local", 10),
 				dns.Domain("ns1.app.local", "10.255.0.2"),
-				dns.Domain("smtp.app.local", "10.255.0.254"),
+				dns.Domain("smtp.app.local", dev.SMTPAddr),
 				dns.Text("_dmarc.app.local", "v=DMARC1;p=quarantine"),
 				dns.Text("app.local", "v=spf1 a:mailer.app.local ~all"),
 				dns.Domain("app.local", "10.255.0.2"),
@@ -61,7 +62,7 @@ var HostService = Join(
 		Network("02:00:00:00:01:04", "igw", IPs("10.0.0.4/24")),
 		Gateway("10.0.0.1"),
 		container.AppMount("acme"),
-		acme.Service("acme", "wojtek@exw.co", acme.Pebble("10.255.0.254"),
+		acme.Service("acme", "wojtek@exw.co", acme.Pebble(dev.PebbleAddr),
 			acme.Waves("10.0.0.2"),
 			acme.Domains("app.local", "*.app.local"),
 		),

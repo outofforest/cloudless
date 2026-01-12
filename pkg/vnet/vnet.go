@@ -13,7 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/samber/lo"
 
-	"github.com/outofforest/cloudless/pkg/dev"
+	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/parse"
 )
 
@@ -39,16 +39,11 @@ type Config struct {
 type Configurator func(vnet *Config)
 
 // NAT defines dev spec of NAT network.
-func NAT(name, mac string, configurators ...Configurator) dev.SpecSource {
+func NAT(name, mac string, configurators ...Configurator) cloudless.SpecSource {
 	return spec("nat", name, mac, configurators)
 }
 
-// Isolated defines dev spec of isolated network.
-func Isolated(name, mac string, configurators ...Configurator) dev.SpecSource {
-	return spec("", name, mac, configurators)
-}
-
-func spec(forwardMode, name, mac string, configurators []Configurator) dev.SpecSource {
+func spec(forwardMode, name, mac string, configurators []Configurator) cloudless.SpecSource {
 	vnet := Config{
 		ForwardMode: forwardMode,
 		Name:        name,
