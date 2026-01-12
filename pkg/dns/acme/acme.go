@@ -99,7 +99,7 @@ func (h *Handler) QueryTXT(query string) []string {
 
 	values := make([]string, 0, len(d))
 	for _, v := range d {
-		values = append(values, v.Value)
+		values = append(values, v.Values...)
 	}
 
 	return values
@@ -137,15 +137,20 @@ func (h *Handler) storeRequest(req *wire.MsgRequest) error {
 		return errors.WithStack(err)
 	}
 
+	valuesByDomain := map[string][]string{}
 	for _, ch := range req.Challenges {
-		chs := h.challenges[ch.Domain]
+		valuesByDomain[ch.Domain] = append(valuesByDomain[ch.Domain], ch.Value)
+	}
+
+	for d, values := range valuesByDomain {
+		chs := h.challenges[d]
 		if chs == nil {
 			chs = map[[32]byte]acmeRecord{}
-			h.challenges[ch.Domain] = chs
+			h.challenges[d] = chs
 		}
 		chs[id] = acmeRecord{
 			TimeAdded: t,
-			Value:     ch.Value,
+			Values:    values,
 			CAA: CAA{
 				Flags: 128,
 				Tag:   "issue",
@@ -175,7 +180,7 @@ func (h *Handler) cleanChallenges() {
 
 type acmeRecord struct {
 	TimeAdded time.Time
-	Value     string
+	Values    []string
 	CAA       CAA
 }
 

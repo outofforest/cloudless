@@ -175,7 +175,6 @@ var deployment = Deployment(
 		shield.Open("tcp4", "igw", ingress.PortHTTP),
 		shield.Open("tcp4", "igw", ingress.PortHTTPS),
 		ingress.Service(
-			ingress.CertificateURL("http://10.0.2.6:"+strconv.FormatUint(acme.Port, 10)),
 			ingress.Endpoint(endpointGrafana,
 				ingress.Domains("dev.onem.network"),
 				ingress.Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete),
@@ -196,7 +195,6 @@ var deployment = Deployment(
 		Gateway("10.0.2.1"),
 		Network("02:00:00:00:05:03", "igw", IPs("10.0.2.6/24")),
 		container.AppMount("acme"),
-		shield.Open("tcp4", "igw", acme.Port),
 		acme.Service("acme", "wojtek@exw.co", acme.LetsEncryptStaging,
 			acme.Waves("10.0.3.2", "10.0.3.3"),
 			acme.Domains("dev.onem.network"),

@@ -13,8 +13,8 @@ import (
 var (
 	// Host configures hosts.
 	Host = BoxFactory(
-		eye.SendMetrics("http://10.101.0.9:80"),
-		eye.RemoteLogging("http://10.101.0.10:80"),
+		eye.SendMetrics("http://10.101.0.10:80"),
+		eye.RemoteLogging("http://10.101.0.11:80"),
 		eye.SystemMonitor(),
 		acpi.PowerService(),
 		ntp.Service(),
@@ -24,8 +24,8 @@ var (
 
 	// Container configures container.
 	Container = BoxFactory(
-		eye.SendMetrics("http://10.101.0.9:80"),
-		eye.RemoteLogging("http://10.101.0.10:80"),
-		containercache.Mirrors("http://10.101.0.7:81"),
+		eye.SendMetrics("http://10.101.0.10:80"),
+		eye.RemoteLogging("http://10.101.0.11:80"),
+		containercache.Mirrors("http://10.101.0.8:81"),
 	)
 )

@@ -25,7 +25,7 @@ const (
 	// Port is the port pebble listens on.
 	Port = 14000
 
-	image      = "ghcr.io/letsencrypt/pebble@sha256:6d78e2b981c77b16e07a2344fb1e0a0beb420af0246816df6810503a2fe74b1b"
+	image      = "ghcr.io/letsencrypt/pebble@sha256:cb3ba60a6f27fbc8e1725bb286f6e82b03c57ea5d5223b5cddd6246222e26b86"
 	caCerFile  = "ca.cer"
 	caKeyFile  = "ca.key"
 	configFile = "config.json"
