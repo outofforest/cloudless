@@ -15,8 +15,8 @@ var (
 	// Host configures hosts.
 	Host = BoxFactory(
 		dns.DNS(),
-		eye.SendMetrics("http://10.101.0.3:81"),
-		eye.RemoteLogging("http://10.101.0.3:82"),
+		eye.SendMetrics("http://10.255.0.253:81"),
+		eye.RemoteLogging("http://10.255.0.253:82"),
 		eye.SystemMonitor(),
 		acpi.PowerService(),
 		ntp.Service(),
@@ -27,8 +27,8 @@ var (
 	// Container configures container.
 	Container = BoxFactory(
 		dns.DNS(),
-		eye.SendMetrics("http://10.101.0.3:81"),
-		eye.RemoteLogging("http://10.101.0.3:82"),
-		containercache.Mirrors("http://10.101.0.4:81"),
+		eye.SendMetrics("http://10.255.0.253:81"),
+		eye.RemoteLogging("http://10.255.0.253:82"),
+		containercache.Mirrors("http://10.255.0.254:81"),
 	)
 )
