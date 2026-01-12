@@ -1,9 +1,10 @@
-package main
+package dev
 
 import (
 	"net/http"
 
 	. "github.com/outofforest/cloudless" //nolint:staticcheck
+	"github.com/outofforest/cloudless/pkg/acpi"
 	"github.com/outofforest/cloudless/pkg/container"
 	containercache "github.com/outofforest/cloudless/pkg/container/cache"
 	"github.com/outofforest/cloudless/pkg/dev/smtp"
@@ -11,19 +12,40 @@ import (
 	"github.com/outofforest/cloudless/pkg/dns"
 	"github.com/outofforest/cloudless/pkg/eye"
 	"github.com/outofforest/cloudless/pkg/ingress"
+	"github.com/outofforest/cloudless/pkg/ntp"
 	"github.com/outofforest/cloudless/pkg/pebble"
 	"github.com/outofforest/cloudless/pkg/shield"
 )
 
+const (
+	devIP = "10.255.0.254"
+
+	// PebbleAddr is the address of pebble service.
+	PebbleAddr = devIP
+
+	// SMTPAddr is the address of smtp service.
+	SMTPAddr = devIP
+
+	// ContainerCacheAddr is the address of container cche service.
+	ContainerCacheAddr = "http://" + devIP + ":81"
+)
+
 var devContainer = BoxFactory(
 	dns.DNS(),
-	eye.SendMetrics("http://10.255.0.253:81"),
-	eye.RemoteLogging("http://10.255.0.253:82"),
+	eye.SendMetrics(PrometheusAddr),
+	eye.RemoteLogging(LokiAddr),
 	containercache.Mirrors("http://10.0.0.6:81"),
 )
 
-var HostDev = Join(
-	Host("dev",
+var devBox = Join(
+	Box("dev",
+		dns.DNS(),
+		eye.SendMetrics(PrometheusAddr),
+		eye.RemoteLogging(LokiAddr),
+		eye.SystemMonitor(),
+		acpi.PowerService(),
+		ntp.Service(),
+
 		MountPersistentBase("vda"),
 		Network("fc:ff:ff:ff:00:01", "igw", IPs("10.255.0.254/24")),
 		Gateway("10.255.0.1"),
@@ -53,26 +75,26 @@ var HostDev = Join(
 			container.Network("brint", "vdns", "fc:ff:ff:ff:01:07"),
 		),
 	),
-	devContainer("pebble",
+	devContainer("dev-pebble",
 		Network("fc:ff:ff:ff:01:02", "igw", IPs("10.0.0.2/24")),
 		Gateway("10.0.0.1"),
 		shield.Open("tcp4", "igw", pebble.Port),
 		pebble.Container("pebble", "10.255.0.254:53"),
 	),
-	devContainer("smtp",
+	devContainer("dev-smtp",
 		Network("fc:ff:ff:ff:01:03", "igw", IPs("10.0.0.3/24")),
 		Gateway("10.0.0.1"),
 		shield.Open("tcp4", "igw", smtp.SMTPPort),
 		shield.Open("tcp4", "igw", smtp.IMAPPort),
 		smtp.Service(),
 	),
-	devContainer("webmail",
+	devContainer("dev-webmail",
 		Network("fc:ff:ff:ff:01:04", "igw", IPs("10.0.0.4/24")),
 		Gateway("10.0.0.1"),
 		shield.Open("tcp4", "igw", webmail.Port),
 		webmail.Container("10.0.0.3:25", "10.0.0.3:143"),
 	),
-	devContainer("ingress",
+	devContainer("dev-ingress",
 		Network("fc:ff:ff:ff:01:05", "igw", IPs("10.0.0.5/24")),
 		Gateway("10.0.0.1"),
 		shield.Open("tcp4", "igw", ingress.PortHTTP),
@@ -88,14 +110,14 @@ var HostDev = Join(
 			ingress.Target("mail", "10.0.0.4", webmail.Port, "/"),
 		),
 	),
-	devContainer("cache",
+	devContainer("dev-cache",
 		Network("fc:ff:ff:ff:01:06", "igw", IPs("10.0.0.6/24")),
 		Gateway("10.0.0.1"),
 		container.AppMount("container-cache"),
 		shield.Open("tcp4", "igw", containercache.Port),
 		containercache.Service("container-cache", 1),
 	),
-	devContainer("dns",
+	devContainer("dev-dns",
 		Network("fc:ff:ff:ff:01:07", "igw", IPs("10.0.0.7/24")),
 		Gateway("10.0.0.1"),
 		shield.Open("udp4", "igw", dns.Port),

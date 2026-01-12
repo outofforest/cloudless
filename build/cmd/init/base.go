@@ -4,6 +4,7 @@ import (
 	. "github.com/outofforest/cloudless" //nolint:staticcheck
 	"github.com/outofforest/cloudless/pkg/acpi"
 	containercache "github.com/outofforest/cloudless/pkg/container/cache"
+	"github.com/outofforest/cloudless/pkg/dev"
 	"github.com/outofforest/cloudless/pkg/dns"
 	"github.com/outofforest/cloudless/pkg/eye"
 	"github.com/outofforest/cloudless/pkg/ntp"
@@ -15,8 +16,8 @@ var (
 	// Host configures hosts.
 	Host = BoxFactory(
 		dns.DNS(),
-		eye.SendMetrics("http://10.255.0.253:81"),
-		eye.RemoteLogging("http://10.255.0.253:82"),
+		eye.SendMetrics(dev.PrometheusAddr),
+		eye.RemoteLogging(dev.LokiAddr),
 		eye.SystemMonitor(),
 		acpi.PowerService(),
 		ntp.Service(),
@@ -27,8 +28,8 @@ var (
 	// Container configures container.
 	Container = BoxFactory(
 		dns.DNS(),
-		eye.SendMetrics("http://10.255.0.253:81"),
-		eye.RemoteLogging("http://10.255.0.253:82"),
-		containercache.Mirrors("http://10.255.0.254:81"),
+		eye.SendMetrics(dev.PrometheusAddr),
+		eye.RemoteLogging(dev.LokiAddr),
+		containercache.Mirrors(dev.ContainerCacheAddr),
 	)
 )

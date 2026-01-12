@@ -1,4 +1,4 @@
-package cloudless
+package dev
 
 import (
 	"context"
@@ -15,14 +15,14 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/outofforest/archive"
-	"github.com/outofforest/cloudless/pkg/dev"
+	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/virt"
 	"github.com/outofforest/parallel"
 )
 
 // Start starts dev environment.
-func Start(libvirtAddr string, sources ...dev.SpecSource) error {
+func Start(libvirtAddr string, sources ...cloudless.SpecSource) error {
 	l, err := libvirtConn(libvirtAddr)
 	if err != nil {
 		return errors.WithStack(err)
@@ -67,10 +67,10 @@ func Destroy(ctx context.Context, libvirtAddr string) error {
 }
 
 // Verify verifies checksums in config.
-func Verify(ctx context.Context, config Config) error {
+func Verify(ctx context.Context, config cloudless.Config) error {
 	errs := []error{}
 
-	resources := append(append([]Resource{
+	resources := append(append([]cloudless.Resource{
 		config.Distro.Base,
 		config.Distro.KernelPackage,
 	}, config.Distro.KernelModulePackages...), config.Distro.BtrfsPackages...)
@@ -107,7 +107,7 @@ func Verify(ctx context.Context, config Config) error {
 
 // DummyService is used to keep box running without any service.
 func DummyService() host.Configurator {
-	return Service("dummy", parallel.Exit, func(ctx context.Context) error {
+	return cloudless.Service("dummy", parallel.Exit, func(ctx context.Context) error {
 		<-ctx.Done()
 		return errors.WithStack(ctx.Err())
 	})

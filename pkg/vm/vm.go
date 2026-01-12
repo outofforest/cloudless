@@ -15,7 +15,6 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/outofforest/cloudless"
-	"github.com/outofforest/cloudless/pkg/dev"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/kernel"
 	"github.com/outofforest/cloudless/pkg/parse"
@@ -130,7 +129,7 @@ func New(name string, cores, memory uint64, configurators ...Configurator) host.
 }
 
 // Spec defines dev spec of vm.
-func Spec(name string, cores, memory uint64, configurators ...Configurator) dev.SpecSource {
+func Spec(name string, cores, memory uint64, configurators ...Configurator) cloudless.SpecSource {
 	vm := Config{
 		Name: name,
 	}

@@ -1,5 +1,7 @@
 package cloudless
 
+import "github.com/digitalocean/go-libvirt"
+
 // Config is the configuration of loader builder.
 type Config struct {
 	Input  InputConfig
@@ -40,3 +42,6 @@ type Resource struct {
 	URL  string
 	Hash string
 }
+
+// SpecSource defines a function installing libvirt objects.
+type SpecSource func(l *libvirt.Libvirt) error
