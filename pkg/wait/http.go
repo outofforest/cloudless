@@ -20,6 +20,9 @@ func HTTP(ctx context.Context, addrs ...string) error {
 			var err error
 			ok, err = testAddr(ctx, m)
 			if err != nil {
+				if ctx.Err() != nil {
+					return errors.WithStack(ctx.Err())
+				}
 				return err
 			}
 			if ok {

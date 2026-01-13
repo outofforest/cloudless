@@ -16,9 +16,7 @@ import (
 
 	"github.com/outofforest/archive"
 	"github.com/outofforest/cloudless"
-	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/virt"
-	"github.com/outofforest/parallel"
 )
 
 // Start starts dev environment.
@@ -44,10 +42,7 @@ func Stop(ctx context.Context, libvirtAddr string) error {
 		return errors.WithStack(err)
 	}
 
-	if err := virt.DestroyVMs(ctx, l, virt.StopDev); err != nil {
-		return err
-	}
-	return virt.DestroyNetworks(ctx, l, virt.StopDev)
+	return virt.DestroyVMs(ctx, l, virt.StopDev)
 }
 
 // Destroy destroys dev environment.
@@ -103,14 +98,6 @@ func Verify(ctx context.Context, config cloudless.Config) error {
 	}
 
 	return goerrors.Join(errs...)
-}
-
-// DummyService is used to keep box running without any service.
-func DummyService() host.Configurator {
-	return cloudless.Service("dummy", parallel.Exit, func(ctx context.Context) error {
-		<-ctx.Done()
-		return errors.WithStack(ctx.Err())
-	})
 }
 
 func libvirtConn(addr string) (*libvirt.Libvirt, error) {

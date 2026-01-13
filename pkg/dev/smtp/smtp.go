@@ -32,10 +32,13 @@ func runSMTP(ctx context.Context, db *db) (retErr error) {
 			if err := s.Shutdown(ctx); err != nil && !errors.Is(err, smtp.ErrServerClosed) {
 				return errors.WithStack(err)
 			}
-			return nil
+			return errors.WithStack(ctx.Err())
 		})
 		spawn("server", parallel.Fail, func(ctx context.Context) error {
-			return errors.WithStack(s.ListenAndServe())
+			if err := s.ListenAndServe(); err != nil {
+				return errors.WithStack(err)
+			}
+			return errors.WithStack(ctx.Err())
 		})
 		return nil
 	})

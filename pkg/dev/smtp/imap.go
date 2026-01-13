@@ -20,10 +20,16 @@ func runIMAP(ctx context.Context, db *db) (retErr error) {
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		spawn("watchdog", parallel.Fail, func(ctx context.Context) error {
 			<-ctx.Done()
-			return errors.WithStack(s.Close())
+			if err := s.Close(); err != nil {
+				return errors.WithStack(err)
+			}
+			return errors.WithStack(ctx.Err())
 		})
 		spawn("server", parallel.Fail, func(ctx context.Context) error {
-			return errors.WithStack(s.ListenAndServe())
+			if err := s.ListenAndServe(); err != nil {
+				return errors.WithStack(err)
+			}
+			return errors.WithStack(ctx.Err())
 		})
 		return nil
 	})

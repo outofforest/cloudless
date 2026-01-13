@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"strings"
 	"text/template"
 
 	"github.com/digitalocean/go-libvirt"
@@ -61,7 +62,11 @@ func spec(forwardMode, name, mac string, configurators []Configurator) cloudless
 		}
 
 		vnet, err := l.NetworkDefineXML(buf.String())
-		if err != nil {
+		switch {
+		case err == nil:
+		case strings.Contains(err.Error(), "already exists"):
+			return nil
+		default:
 			return errors.WithStack(err)
 		}
 		return errors.WithStack(l.NetworkCreate(vnet))
