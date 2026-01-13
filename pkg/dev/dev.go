@@ -79,7 +79,7 @@ var devBox = Join(
 		Network("fc:ff:ff:ff:01:02", "igw", IPs("10.255.255.2/24")),
 		Gateway("10.255.255.1"),
 		shield.Open("tcp4", "igw", pebble.Port),
-		pebble.Container("pebble", "10.255.0.254:53"),
+		pebble.Container("pebble", "10.255.0.2:53"),
 	),
 	devContainer("dev-smtp",
 		Network("fc:ff:ff:ff:01:03", "igw", IPs("10.255.255.3/24")),
