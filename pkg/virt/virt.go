@@ -79,6 +79,7 @@ func DestroyVMs(ctx context.Context, l *libvirt.Libvirt, decideFun DecideFunc) e
 						<-time.After(time.Second)
 					case IsError(err, libvirt.ErrNoDomain):
 						return nil
+					case strings.Contains(err.Error(), "domain is not running"):
 					default:
 						return errors.WithStack(err)
 					}
