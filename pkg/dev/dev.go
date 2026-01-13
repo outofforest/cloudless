@@ -100,7 +100,7 @@ var devBox = Join(
 		shield.Open("tcp4", "igw", ingress.PortHTTP),
 		ingress.Service(
 			ingress.Endpoint("mail",
-				ingress.Domains("mail.dev.local"),
+				ingress.Domains("mail.dev.test"),
 				ingress.HTTPS(ingress.HTTPSModeDisabled),
 				ingress.Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete),
 				ingress.BodyLimit(10*1024*1024),
@@ -122,10 +122,10 @@ var devBox = Join(
 		Gateway("10.255.255.1"),
 		shield.Open("udp4", "igw", dns.Port),
 		dns.Service(
-			dns.Zone("dev.local", "ns1.dev.local", "wojtek@app.local", 1,
-				dns.Nameservers("ns1.dev.local"),
-				dns.Domain("ns1.dev.local", "10.255.0.254"),
-				dns.Domain("mail.dev.local", "10.255.0.254"),
+			dns.Zone("dev.test", "ns1.dev.test", "wojtek@app.test", 1,
+				dns.Nameservers("ns1.dev.test"),
+				dns.Domain("ns1.dev.test", "10.255.0.254"),
+				dns.Domain("mail.dev.test", "10.255.0.254"),
 			),
 		),
 	),

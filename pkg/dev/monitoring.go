@@ -98,7 +98,7 @@ var monitoringBox = Join(
 		shield.Open("tcp4", "igw", ingress.PortHTTP),
 		ingress.Service(
 			ingress.Endpoint("grafana",
-				ingress.Domains("grafana.mon.local"),
+				ingress.Domains("grafana.mon.test"),
 				ingress.HTTPS(ingress.HTTPSModeDisabled),
 				ingress.Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete),
 				ingress.BodyLimit(4096),
@@ -113,10 +113,10 @@ var monitoringBox = Join(
 		Gateway("10.255.255.1"),
 		shield.Open("udp4", "igw", dns.Port),
 		dns.Service(
-			dns.Zone("mon.local", "ns1.mon.local", "wojtek@app.local", 1,
-				dns.Nameservers("ns1.mon.local"),
-				dns.Domain("ns1.mon.local", "10.255.0.253"),
-				dns.Domain("grafana.mon.local", "10.255.0.253"),
+			dns.Zone("mon.test", "ns1.mon.test", "wojtek@app.test", 1,
+				dns.Nameservers("ns1.mon.test"),
+				dns.Domain("ns1.mon.test", "10.255.0.253"),
+				dns.Domain("grafana.mon.test", "10.255.0.253"),
 			),
 		),
 	),
