@@ -28,7 +28,7 @@ require (
 	github.com/outofforest/proton v0.19.0
 	github.com/outofforest/run v0.8.0
 	github.com/outofforest/tools v1.5.0
-	github.com/outofforest/wave v0.2.0
+	github.com/outofforest/wave v0.2.1
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.10
 	github.com/ridge/must v0.6.0
@@ -61,10 +61,10 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mdlayher/socket v0.5.1 // indirect
 	github.com/outofforest/ioc/v2 v2.5.2 // indirect
-	github.com/outofforest/resonance v0.23.0 // indirect
+	github.com/outofforest/resonance v0.25.0 // indirect
 	github.com/outofforest/spin v0.3.1 // indirect
 	github.com/outofforest/varuint64 v0.1.1 // indirect
-	github.com/pierrec/lz4/v4 v4.1.23 // indirect
+	github.com/pierrec/lz4/v4 v4.1.24 // indirect
 	github.com/pkg/xattr v0.4.12 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
