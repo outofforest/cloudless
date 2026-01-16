@@ -46,12 +46,12 @@ require (
 	github.com/outofforest/mass v0.2.1 // indirect
 	github.com/outofforest/parallel v0.2.3 // indirect
 	github.com/outofforest/proton v0.19.0 // indirect
-	github.com/outofforest/resonance v0.23.0 // indirect
+	github.com/outofforest/resonance v0.25.0 // indirect
 	github.com/outofforest/run v0.8.0 // indirect
 	github.com/outofforest/spin v0.3.1 // indirect
 	github.com/outofforest/varuint64 v0.1.1 // indirect
-	github.com/outofforest/wave v0.2.0 // indirect
-	github.com/pierrec/lz4/v4 v4.1.23 // indirect
+	github.com/outofforest/wave v0.2.1 // indirect
+	github.com/pierrec/lz4/v4 v4.1.24 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/sftp v1.13.10 // indirect
 	github.com/pkg/xattr v0.4.12 // indirect
