@@ -8,6 +8,6 @@ import (
 //go:generate go run .
 func main() {
 	proton.Generate("../types.proton.go",
-		proton.Message(wire.MsgCertificate{}),
+		proton.Message[wire.MsgCertificate](),
 	)
 }
