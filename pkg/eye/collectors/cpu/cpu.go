@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/outofforest/cloudless/pkg/eye/collectors"
+	"github.com/outofforest/cloudless/pkg/eye/metrics"
 	"github.com/outofforest/parallel"
 )
 
@@ -22,11 +22,17 @@ const (
 )
 
 // New returns CPU collector.
-func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, parallel.Task) {
-	return func() (string, prometheus.Gatherer, parallel.Task) {
-		m, gatherer := newMetrics()
+func New(collectInterval time.Duration) collectors.CollectorFunc {
+	return func() (string, *metrics.Set, parallel.Task) {
+		set := metrics.NewSet()
 
-		return "cpu", gatherer, func(ctx context.Context) error {
+		return "cpu", set, func(ctx context.Context) error {
+			// Utilization of all CPUs.
+			mUtilizationAll := set.NewGauge(metrics.N(namespace, subsystem, "utilization_all"))
+
+			// Utilization of the busiest CPUs.
+			mUtilizationBusiest := set.NewGauge(metrics.N(namespace, subsystem, "utilization_busiest"))
+
 			timer := time.NewTicker(collectInterval)
 			defer timer.Stop()
 
@@ -108,7 +114,7 @@ func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, par
 
 					util := float64(total-idle) / float64(total)
 					if i == 0 {
-						m.UtilizationAll(util)
+						mUtilizationAll.Set(util)
 						continue
 					}
 					if util > worst {
@@ -116,7 +122,7 @@ func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, par
 					}
 				}
 
-				m.UtilizationBusiest(worst)
+				mUtilizationBusiest.Set(worst)
 			}
 		}
 	}
@@ -125,37 +131,4 @@ func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, par
 type measure struct {
 	total uint64
 	idle  uint64
-}
-
-func newMetrics() (*metrics, prometheus.Gatherer) {
-	r := prometheus.NewRegistry()
-	return &metrics{
-		registry: r,
-		utilizationAll: promauto.With(r).NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "utilization_all",
-			Help:      "Utilization of all CPUs",
-		}),
-		utilizationBusiest: promauto.With(r).NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "utilization_busiest",
-			Help:      "Utilization of the busiest CPUs",
-		}),
-	}, r
-}
-
-type metrics struct {
-	registry           *prometheus.Registry
-	utilizationAll     prometheus.Gauge
-	utilizationBusiest prometheus.Gauge
-}
-
-func (m *metrics) UtilizationAll(v float64) {
-	m.utilizationAll.Set(v)
-}
-
-func (m *metrics) UtilizationBusiest(v float64) {
-	m.utilizationBusiest.Set(v)
 }

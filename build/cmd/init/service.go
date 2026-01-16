@@ -7,6 +7,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/dev"
 	"github.com/outofforest/cloudless/pkg/dev/mailer"
 	"github.com/outofforest/cloudless/pkg/dns"
+	"github.com/outofforest/cloudless/pkg/eye"
 	"github.com/outofforest/cloudless/pkg/shield"
 	"github.com/outofforest/cloudless/pkg/wave"
 )
@@ -16,6 +17,8 @@ var HostService = Join(
 		MountPersistentBase("vda"),
 		Network("02:00:00:00:00:02", "igw", IPs("10.255.0.2/24")),
 		Gateway("10.255.0.1"),
+		shield.Open("tcp4", "igw", eye.MetricPort),
+		eye.MetricsServer(eye.Addresses("10.255.255.2", "10.255.255.3", "10.255.255.4", "10.255.255.5")),
 		shield.Expose("udp", "10.255.0.2", dns.Port, "10.255.255.3", dns.Port),
 		shield.Masquerade("brint", "igw"),
 		Bridge("brint", "02:00:00:00:01:01", IPs("10.255.255.1/24")),

@@ -43,7 +43,7 @@ func Container(appName string) host.Configurator {
 				HTTPPort: Port,
 			}
 
-			f, err := os.OpenFile(filepath.Join(appDir, "config.yaml"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+			f, err := os.OpenFile(filepath.Join(appDir, "config.tmpl.yaml"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 			if err != nil {
 				return errors.WithStack(err)
 			}
@@ -53,7 +53,7 @@ func Container(appName string) host.Configurator {
 		}),
 		container.RunImage(image,
 			container.Cmd(
-				"-config.file", filepath.Join(appDir, "config.yaml"),
+				"-config.file", filepath.Join(appDir, "config.tmpl.yaml"),
 			),
 			container.WorkingDir(appDir),
 		))

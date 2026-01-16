@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"text/template"
 
 	"github.com/pkg/errors"
 
@@ -21,23 +22,38 @@ const (
 	image = "prom/prometheus@sha256:c4c1af714765bd7e06e7ae8301610c9244686a4c02d5329ae275878e10eb481b"
 )
 
-//go:embed config.yaml
-var config []byte
+var (
+	//go:embed config.tmpl.yaml
+	configTmpl     string
+	configTemplate = template.Must(template.New("").Parse(configTmpl))
+)
 
 // Container runs prometheus container.
-func Container(appName string) host.Configurator {
+func Container(appName string, configurators ...Configurator) host.Configurator {
+	var config Config
+
+	for _, c := range configurators {
+		c(&config)
+	}
+
 	appDir := cloudless.AppDir(appName)
+	configPath := filepath.Join(appDir, "config.yaml")
 
 	return cloudless.Join(
 		container.AppMount(appName),
 		cloudless.Prepare(func(_ context.Context) error {
-			return errors.WithStack(os.WriteFile(filepath.Join(appDir, "config.yaml"), config, 0o600))
+			f, err := os.OpenFile(configPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+			if err != nil {
+				return errors.WithStack(err)
+			}
+			defer f.Close()
+
+			return errors.WithStack(configTemplate.Execute(f, config))
 		}),
 		container.RunImage(image,
 			container.Cmd(
-				"--config.file", filepath.Join(appDir, "config.yaml"),
+				"--config.file", configPath,
 				"--web.listen-address", fmt.Sprintf("0.0.0.0:%d", Port),
-				"--web.enable-remote-write-receiver",
 				"--storage.tsdb.path", filepath.Join(appDir, "data"),
 				"--storage.tsdb.retention.time=1m",
 				"--log.format=json",

@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netlink"
 
+	"github.com/outofforest/cloudless/pkg/eye/metrics"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/kernel"
 	"github.com/outofforest/cloudless/pkg/parse"
@@ -334,10 +334,10 @@ func Service(name string, onExit parallel.OnExit, task parallel.Task) host.Confi
 	}
 }
 
-// Metrics registers prometheus metric gatherers.
-func Metrics(gatherers ...prometheus.Gatherer) host.Configurator {
+// Metrics registers metric sets.
+func Metrics(sets ...*metrics.Set) host.Configurator {
 	return func(c *host.Configuration) error {
-		c.RegisterMetrics(gatherers...)
+		c.RegisterMetrics(sets...)
 		return nil
 	}
 }

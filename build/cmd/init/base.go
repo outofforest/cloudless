@@ -16,7 +16,6 @@ var (
 	// Host configures hosts.
 	Host = BoxFactory(
 		dns.DNS(),
-		eye.SendMetrics(dev.PrometheusAddr),
 		eye.RemoteLogging(dev.LokiAddr),
 		eye.SystemMonitor(),
 		acpi.PowerService(),
@@ -28,7 +27,8 @@ var (
 	// Container configures container.
 	Container = BoxFactory(
 		dns.DNS(),
-		eye.SendMetrics(dev.PrometheusAddr),
+		shield.Open("tcp4", "igw", eye.MetricPort),
+		eye.MetricsServer(),
 		eye.RemoteLogging(dev.LokiAddr),
 		containercache.Mirrors(dev.ContainerCacheAddr),
 	)

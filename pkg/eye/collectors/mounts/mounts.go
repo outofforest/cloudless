@@ -9,16 +9,17 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/sys/unix"
 
+	"github.com/outofforest/cloudless/pkg/eye/collectors"
+	"github.com/outofforest/cloudless/pkg/eye/metrics"
 	"github.com/outofforest/parallel"
 )
 
 const (
-	namespace = "eye"
-	subsystem = "mounts"
+	namespace       = "eye"
+	subsystem       = "mounts"
+	labelMountpoint = "mountpoint"
 )
 
 var ignore = map[string]struct{}{
@@ -28,11 +29,11 @@ var ignore = map[string]struct{}{
 }
 
 // New returns mounts collector.
-func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, parallel.Task) {
-	return func() (string, prometheus.Gatherer, parallel.Task) {
-		m, gatherer := newMetrics()
+func New(collectInterval time.Duration) collectors.CollectorFunc {
+	return func() (string, *metrics.Set, parallel.Task) {
+		set := metrics.NewSet()
 
-		return "mounts", gatherer, func(ctx context.Context) error {
+		return "mounts", set, func(ctx context.Context) error {
 			timer := time.NewTicker(collectInterval)
 			defer timer.Stop()
 
@@ -85,33 +86,12 @@ func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, par
 						continue
 					}
 
-					m.Utilization(mountPoint, float64(stats.Blocks-stats.Bfree)/float64(stats.Blocks))
+					// "Utilization of mountpoint".
+					set.GetOrCreateGauge(metrics.N(namespace, subsystem, "utilization"),
+						metrics.L(labelMountpoint, mountPoint)).
+						Set(float64(stats.Blocks-stats.Bfree) / float64(stats.Blocks))
 				}
 			}
 		}
 	}
-}
-
-const labelMountpoint = "mountpoint"
-
-func newMetrics() (*metrics, prometheus.Gatherer) {
-	r := prometheus.NewRegistry()
-	return &metrics{
-		registry: r,
-		utilization: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "utilization",
-			Help:      "Utilization of mountpoint",
-		}, []string{labelMountpoint}),
-	}, r
-}
-
-type metrics struct {
-	registry    *prometheus.Registry
-	utilization *prometheus.GaugeVec
-}
-
-func (m *metrics) Utilization(mountpoint string, v float64) {
-	m.utilization.WithLabelValues(mountpoint).Set(v)
 }

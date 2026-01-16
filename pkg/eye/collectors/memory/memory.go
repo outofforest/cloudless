@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/outofforest/cloudless/pkg/eye/collectors"
+	"github.com/outofforest/cloudless/pkg/eye/metrics"
 	"github.com/outofforest/parallel"
 )
 
@@ -34,11 +34,14 @@ var fields = map[string]struct{}{
 }
 
 // New returns memory collector.
-func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, parallel.Task) {
-	return func() (string, prometheus.Gatherer, parallel.Task) {
-		m, gatherer := newMetrics()
+func New(collectInterval time.Duration) collectors.CollectorFunc {
+	return func() (string, *metrics.Set, parallel.Task) {
+		set := metrics.NewSet()
 
-		return "memory", gatherer, func(ctx context.Context) error {
+		return "memory", set, func(ctx context.Context) error {
+			// Utilization of memory.
+			mUtilization := set.NewGauge(metrics.N(namespace, subsystem, "utilization"))
+
 			timer := time.NewTicker(collectInterval)
 			defer timer.Stop()
 
@@ -125,30 +128,8 @@ func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, par
 					return errors.New("memAvailable is greater than memTotal")
 				}
 
-				m.Utilization(float64(memTotal-memAvailable) / float64(memTotal))
+				mUtilization.Set(float64(memTotal-memAvailable) / float64(memTotal))
 			}
 		}
 	}
-}
-
-func newMetrics() (*metrics, prometheus.Gatherer) {
-	r := prometheus.NewRegistry()
-	return &metrics{
-		registry: r,
-		utilization: promauto.With(r).NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "utilization",
-			Help:      "Utilization of memory",
-		}),
-	}, r
-}
-
-type metrics struct {
-	registry    *prometheus.Registry
-	utilization prometheus.Gauge
-}
-
-func (m *metrics) Utilization(v float64) {
-	m.utilization.Set(v)
 }

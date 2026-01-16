@@ -10,15 +10,16 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/outofforest/cloudless/pkg/eye/collectors"
+	"github.com/outofforest/cloudless/pkg/eye/metrics"
 	"github.com/outofforest/parallel"
 )
 
 const (
 	namespace = "eye"
 	subsystem = "disks"
+	labelDev  = "dev"
 
 	indexDevName      = 2
 	indexIOInProgress = 11
@@ -30,11 +31,11 @@ var indexes = map[int]struct{}{
 }
 
 // New returns network collector.
-func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, parallel.Task) {
-	return func() (string, prometheus.Gatherer, parallel.Task) {
-		m, gatherer := newMetrics()
+func New(collectInterval time.Duration) collectors.CollectorFunc {
+	return func() (string, *metrics.Set, parallel.Task) {
+		set := metrics.NewSet()
 
-		return "disks", gatherer, func(ctx context.Context) error {
+		return "disks", set, func(ctx context.Context) error {
 			timer := time.NewTicker(collectInterval)
 			defer timer.Stop()
 
@@ -90,35 +91,14 @@ func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, par
 							if err != nil {
 								return errors.WithStack(err)
 							}
-							m.OperationsInProgress(devName, value)
+
+							// Number of I/O operations in progress.
+							set.GetOrCreateGauge(metrics.N(namespace, subsystem, "in_progress"),
+								metrics.L(labelDev, devName)).Set(float64(value))
 						}
 					}
 				}
 			}
 		}
 	}
-}
-
-const labelDev = "dev"
-
-func newMetrics() (*metrics, prometheus.Gatherer) {
-	r := prometheus.NewRegistry()
-	return &metrics{
-		registry: r,
-		operationsInProgress: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "in_progress",
-			Help:      "Number of I/O operations in progress",
-		}, []string{labelDev}),
-	}, r
-}
-
-type metrics struct {
-	registry             *prometheus.Registry
-	operationsInProgress *prometheus.GaugeVec
-}
-
-func (m *metrics) OperationsInProgress(dev string, ops uint64) {
-	m.operationsInProgress.WithLabelValues(dev).Set(float64(ops))
 }

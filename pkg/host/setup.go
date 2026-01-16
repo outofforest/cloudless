@@ -16,16 +16,17 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/cavaliergopher/cpio"
 	"github.com/digitalocean/go-libvirt"
 	"github.com/digitalocean/go-libvirt/socket/dialers"
 	"github.com/google/nftables"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 
+	"github.com/outofforest/cloudless/pkg/eye/metrics"
 	"github.com/outofforest/cloudless/pkg/host/firewall"
 	"github.com/outofforest/cloudless/pkg/host/zombie"
 	"github.com/outofforest/cloudless/pkg/kernel"
@@ -158,7 +159,7 @@ type (
 
 // SealedConfiguration exposes information collected by the configurators.
 type SealedConfiguration interface {
-	MetricGatherer() prometheus.Gatherer
+	MetricSets() []*metrics.Set
 	Packages() []string
 	ContainerImages() []string
 	Hostname() string
@@ -189,7 +190,7 @@ type Configuration struct {
 	pkgRepo                 *packageRepo
 	containerImagesRepo     *containerImagesRepo
 	remoteLoggingConfig     remote.Config[logLabels]
-	metricGatherers         prometheus.Gatherers
+	metricSets              []*metrics.Set
 
 	requireIPForwarding bool
 	requireInitramfs    bool
@@ -226,7 +227,7 @@ func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
 		if c2.remoteLoggingConfig.URL != "" {
 			c.RemoteLogging(c2.remoteLoggingConfig.URL)
 		}
-		c.RegisterMetrics(c2.metricGatherers...)
+		c.RegisterMetrics(c2.metricSets...)
 		if c2.requireIPForwarding {
 			c.RequireIPForwarding()
 		}
@@ -283,14 +284,14 @@ func (c *Configuration) RemoteLogging(lokiURL string) {
 	c.remoteLoggingConfig.URL = lokiURL
 }
 
-// MetricGatherer returns prometheus metric gatherer.
-func (c *Configuration) MetricGatherer() prometheus.Gatherer {
-	return c.topConfig.metricGatherers
+// MetricSets returns metric sets.
+func (c *Configuration) MetricSets() []*metrics.Set {
+	return c.topConfig.metricSets
 }
 
-// RegisterMetrics registers prometheus metric gatherers.
-func (c *Configuration) RegisterMetrics(gatherers ...prometheus.Gatherer) {
-	c.metricGatherers = append(c.metricGatherers, gatherers...)
+// RegisterMetrics registers metric sets.
+func (c *Configuration) RegisterMetrics(sets ...*metrics.Set) {
+	c.metricSets = append(c.metricSets, sets...)
 }
 
 // RequireIPForwarding is called if host requires IP forwarding to be enabled.
@@ -431,13 +432,13 @@ type Configurator func(c *Configuration) error
 //
 //nolint:gocyclo
 func Run(ctx context.Context, configurators ...Configurator) error {
-	boxMetrics, boxMetricGatherer := newMetrics()
+	set := metrics.NewSet()
 	cfg := &Configuration{
 		isContainer:         IsContainer(),
 		pkgRepo:             newPackageRepo(),
 		containerImagesRepo: newContainerImagesRepo(),
-		metricGatherers: prometheus.Gatherers{
-			boxMetricGatherer,
+		metricSets: []*metrics.Set{
+			set,
 		},
 	}
 	cfg.topConfig = cfg
@@ -485,6 +486,12 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 		return errors.New("host does not match the configuration")
 	}
 
+	for _, s := range cfg.metricSets {
+		s.AddLabels(metrics.L("box", cfg.hostname))
+	}
+	// Time when box has been started.
+	mStartTime := set.NewGauge("start_time")
+
 	if !cfg.isContainer && len(cfg.prune) > 0 {
 		return errors.New("pruning might be done only inside container")
 	}
@@ -498,7 +505,7 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 	}
 	ctx = logger.With(ctx, zap.String("box", cfg.hostname))
 
-	boxMetrics.BoxStarted()
+	mStartTime.Set(metrics.Time(time.Now()))
 
 	err := parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		if sendLogsTask != nil {
