@@ -37,7 +37,6 @@ const (
 var (
 	// Host configures hosts.
 	Host = BoxFactory(
-		eye.SendMetrics("http://10.0.4.3:80"),
 		eye.RemoteLogging("http://10.0.4.4:80"),
 		yum.Mirrors("http://10.0.0.100"),
 		acpi.PowerService(),
@@ -49,7 +48,6 @@ var (
 
 	// Container configures containers.
 	Container = BoxFactory(
-		eye.SendMetrics("http://10.0.4.3:80"),
 		eye.RemoteLogging("http://10.0.4.4:80"),
 		containercache.Mirrors("http://10.0.0.100:81"),
 	)

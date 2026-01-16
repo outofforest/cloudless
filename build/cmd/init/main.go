@@ -7,7 +7,7 @@ import (
 
 var deployment = Deployment(
 	ImmediateKernelModules(DefaultKernelModules...),
-	dev.Boxes(),
+	dev.Boxes("10.255.0.2:9000"),
 
 	HostService,
 )

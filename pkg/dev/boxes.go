@@ -9,10 +9,10 @@ import (
 )
 
 // Boxes adds dev boxes to the environment.
-func Boxes() host.Configurator {
+func Boxes(metricAddresses ...string) host.Configurator {
 	return cloudless.Join(
-		monitoringBox,
-		devBox,
+		monitoringBox(metricAddresses),
+		devBox(),
 	)
 }
 

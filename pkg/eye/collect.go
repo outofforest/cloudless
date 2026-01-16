@@ -4,21 +4,21 @@ import (
 	"context"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/outofforest/cloudless"
+	"github.com/outofforest/cloudless/pkg/eye/collectors"
 	"github.com/outofforest/cloudless/pkg/eye/collectors/cpu"
 	"github.com/outofforest/cloudless/pkg/eye/collectors/disks"
 	"github.com/outofforest/cloudless/pkg/eye/collectors/memory"
 	"github.com/outofforest/cloudless/pkg/eye/collectors/mounts"
 	"github.com/outofforest/cloudless/pkg/eye/collectors/network"
+	"github.com/outofforest/cloudless/pkg/eye/metrics"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/parallel"
 )
 
 const collectInterval = time.Second
 
-var collectors = []func() (string, prometheus.Gatherer, parallel.Task){
+var cs = []collectors.CollectorFunc{
 	cpu.New(collectInterval),
 	memory.New(collectInterval),
 	network.New(collectInterval),
@@ -28,11 +28,11 @@ var collectors = []func() (string, prometheus.Gatherer, parallel.Task){
 
 // SystemMonitor returns new service collecting system metrics.
 func SystemMonitor() host.Configurator {
-	gatherers := make([]prometheus.Gatherer, 0, len(collectors))
-	tasks := make([]task, 0, len(collectors))
-	for _, c := range collectors {
-		n, g, t := c()
-		gatherers = append(gatherers, g)
+	sets := make([]*metrics.Set, 0, len(cs))
+	tasks := make([]task, 0, len(cs))
+	for _, c := range cs {
+		n, set, t := c()
+		sets = append(sets, set)
 		tasks = append(tasks, task{
 			Name: n,
 			Task: t,
@@ -40,7 +40,7 @@ func SystemMonitor() host.Configurator {
 	}
 
 	return cloudless.Join(
-		cloudless.Metrics(gatherers...),
+		cloudless.Metrics(sets...),
 		cloudless.Service("eye", parallel.Fail, func(ctx context.Context) error {
 			return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 				for _, t := range tasks {

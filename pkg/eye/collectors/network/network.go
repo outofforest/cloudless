@@ -10,15 +10,16 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/outofforest/cloudless/pkg/eye/collectors"
+	"github.com/outofforest/cloudless/pkg/eye/metrics"
 	"github.com/outofforest/parallel"
 )
 
 const (
-	namespace = "eye"
-	subsystem = "network"
+	namespace  = "eye"
+	subsystem  = "network"
+	labelIface = "iface"
 
 	indexReceivedBytes    = 0
 	indexTransmittedBytes = 8
@@ -30,11 +31,11 @@ var indexes = map[int]struct{}{
 }
 
 // New returns network collector.
-func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, parallel.Task) {
-	return func() (string, prometheus.Gatherer, parallel.Task) {
-		m, gatherer := newMetrics()
+func New(collectInterval time.Duration) collectors.CollectorFunc {
+	return func() (string, *metrics.Set, parallel.Task) {
+		set := metrics.NewSet()
 
-		return "network", gatherer, func(ctx context.Context) error {
+		return "network", set, func(ctx context.Context) error {
 			timer := time.NewTicker(collectInterval)
 			defer timer.Stop()
 
@@ -93,50 +94,17 @@ func New(collectInterval time.Duration) func() (string, prometheus.Gatherer, par
 
 						switch i {
 						case indexReceivedBytes:
-							m.ReceivedBytes(iface, value)
+							// Number of bytes received.
+							set.GetOrCreateGauge(metrics.N(namespace, subsystem, "received_bytes_total"),
+								metrics.L(labelIface, iface)).Set(float64(value))
 						case indexTransmittedBytes:
-							m.TransmittedBytes(iface, value)
+							// Number of bytes transmitted.
+							set.GetOrCreateGauge(metrics.N(namespace, subsystem, "transmitted_bytes_total"),
+								metrics.L(labelIface, iface)).Set(float64(value))
 						}
 					}
 				}
 			}
 		}
 	}
-}
-
-const labelIface = "iface"
-
-func newMetrics() (*metrics, prometheus.Gatherer) {
-	r := prometheus.NewRegistry()
-	return &metrics{
-		registry: r,
-		//nolint:promlinter
-		receivedBytes: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "received_bytes_total",
-			Help:      "Number of bytes received",
-		}, []string{labelIface}),
-		//nolint:promlinter
-		transmittedBytes: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "transmitted_bytes_total",
-			Help:      "Number of bytes transmitted",
-		}, []string{labelIface}),
-	}, r
-}
-
-type metrics struct {
-	registry         *prometheus.Registry
-	receivedBytes    *prometheus.GaugeVec
-	transmittedBytes *prometheus.GaugeVec
-}
-
-func (m *metrics) ReceivedBytes(iface string, bytes uint64) {
-	m.receivedBytes.WithLabelValues(iface).Set(float64(bytes))
-}
-
-func (m *metrics) TransmittedBytes(iface string, bytes uint64) {
-	m.transmittedBytes.WithLabelValues(iface).Set(float64(bytes))
 }
