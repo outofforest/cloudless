@@ -1,13 +1,13 @@
 module github.com/outofforest/cloudless
 
-go 1.25
+go 1.25.0
 
 require (
-	github.com/VictoriaMetrics/metrics v1.40.2
+	github.com/VictoriaMetrics/metrics v1.41.2
 	github.com/beevik/ntp v1.5.0
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash v1.1.0
-	github.com/digitalocean/go-libvirt v0.0.0-20260106181248-56be673cd6a5
+	github.com/digitalocean/go-libvirt v0.0.0-20260217163227-273eaa321819
 	github.com/diskfs/go-diskfs v1.7.0
 	github.com/emersion/go-imap v1.2.1
 	github.com/emersion/go-message v0.18.2
@@ -18,7 +18,7 @@ require (
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/mdlayher/genetlink v1.3.2
-	github.com/mdlayher/netlink v1.8.0
+	github.com/mdlayher/netlink v1.9.0
 	github.com/outofforest/archive v0.5.0
 	github.com/outofforest/build/v2 v2.8.0
 	github.com/outofforest/libexec v0.5.0
@@ -40,9 +40,9 @@ require (
 	github.com/wneessen/go-mail v0.7.2
 	github.com/wneessen/go-mail-middleware v0.1.1
 	go.uber.org/zap v1.27.1
-	golang.org/x/crypto v0.47.0
-	golang.org/x/net v0.49.0
-	golang.org/x/sys v0.40.0
+	golang.org/x/crypto v0.48.0
+	golang.org/x/net v0.51.0
+	golang.org/x/sys v0.41.0
 )
 
 require (
@@ -77,7 +77,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
