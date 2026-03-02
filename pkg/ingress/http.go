@@ -219,8 +219,9 @@ type endpoint struct {
 	id             EndpointID
 	secure         bool
 	cfg            EndpointConfig
-	allowedMethods map[string]bool
-	allowedDomains map[string]bool
+	allowedMethods map[string]struct{}
+	allowedDomains map[string]struct{}
+	allowedOrigins map[string]struct{}
 
 	mu      sync.RWMutex
 	targets []string
@@ -230,12 +231,12 @@ type endpoint struct {
 //
 //nolint:gocyclo
 func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !e.allowedMethods[r.Method] {
+	if _, exists := e.allowedMethods[r.Method]; !exists {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 	hostPort := strings.SplitN(r.Host, ":", 2)
-	if !e.allowedDomains[hostPort[0]] {
+	if _, exists := e.allowedDomains[hostPort[0]]; !exists {
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
@@ -243,6 +244,17 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if isWebsocket && (!e.cfg.AllowWebsockets || r.Method != http.MethodGet) {
 		w.WriteHeader(http.StatusForbidden)
 		return
+	}
+	origin := r.Header.Get("Origin")
+	if origin != "" {
+		_, exists := e.allowedOrigins[origin]
+		if !exists {
+			_, exists = e.allowedOrigins["*"]
+		}
+		if !exists {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 	}
 
 	isHTTPS := r.TLS != nil
@@ -365,6 +377,9 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header()["Location"] = []string{newLocation}
 	}
+	if origin != "" {
+		w.Header()["Access-Control-Allow-Origin"] = []string{origin}
+	}
 	w.WriteHeader(resp.StatusCode)
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		http.Error(w, "Proxy Error", http.StatusInternalServerError)
@@ -471,14 +486,15 @@ func (b *binding) addEndpoint(id EndpointID, cfg EndpointConfig) *endpoint {
 	return e
 }
 
-var skipHeaders = map[string]bool{
-	"X-Request-Id": true,
-	"Location":     true,
+var skipHeaders = map[string]struct{}{
+	"X-Request-Id":                {},
+	"Location":                    {},
+	"Access-Control-Allow-Origin": {},
 }
 
 func copyHeader(dst, src http.Header) {
 	for k, vv := range src {
-		if skipHeaders[k] {
+		if _, exists := skipHeaders[k]; exists {
 			continue
 		}
 		for _, v := range vv {
@@ -488,13 +504,17 @@ func copyHeader(dst, src http.Header) {
 }
 
 func newEndpoint(secure bool, id EndpointID, cfg EndpointConfig) *endpoint {
-	allowedMethods := make(map[string]bool, len(cfg.AllowedMethods))
+	allowedMethods := make(map[string]struct{}, len(cfg.AllowedMethods))
 	for _, m := range cfg.AllowedMethods {
-		allowedMethods[m] = true
+		allowedMethods[m] = struct{}{}
 	}
-	allowedDomains := make(map[string]bool, len(cfg.AllowedDomains))
+	allowedDomains := make(map[string]struct{}, len(cfg.AllowedDomains))
 	for _, d := range cfg.AllowedDomains {
-		allowedDomains[d] = true
+		allowedDomains[d] = struct{}{}
+	}
+	allowedOrigins := make(map[string]struct{}, len(cfg.AllowedOrigins))
+	for _, d := range cfg.AllowedOrigins {
+		allowedOrigins[d] = struct{}{}
 	}
 	return &endpoint{
 		secure:         secure,
@@ -502,6 +522,7 @@ func newEndpoint(secure bool, id EndpointID, cfg EndpointConfig) *endpoint {
 		cfg:            cfg,
 		allowedMethods: allowedMethods,
 		allowedDomains: allowedDomains,
+		allowedOrigins: allowedOrigins,
 	}
 }
 

@@ -167,5 +167,5 @@ func Middleware(mw ...func(http.Handler) http.Handler) Option {
 // 2. Recover (catch and log panic)
 // 3. CORS (allow cross-origin requests).
 func StandardMiddleware(next http.Handler) http.Handler {
-	return Log(Recover(CORS(next)))
+	return Log(Recover(next))
 }
