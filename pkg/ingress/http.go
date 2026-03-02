@@ -22,7 +22,6 @@ import (
 
 	"github.com/outofforest/cloudless/pkg/acme/wire"
 	"github.com/outofforest/cloudless/pkg/thttp"
-	"github.com/outofforest/cloudless/pkg/tnet"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
 	"github.com/outofforest/wave"
@@ -49,7 +48,7 @@ type HTTPIngress struct {
 
 // Run runs the ingress servers.
 func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
-	bindings := map[string]*binding{}
+	bindings := map[net.Listener]*binding{}
 
 	var enableHttps bool
 	allowedDomains := map[string]struct{}{}
@@ -63,26 +62,26 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 		}
 		var endpoints []*endpoint
 		if e.HTTPSMode != HTTPSModeOnly {
-			for _, b := range e.PlainBindings {
-				if bindings[b] == nil {
-					bindings[b] = newBinding(false)
+			for _, ls := range e.PlainListeners {
+				if bindings[ls] == nil {
+					bindings[ls] = newBinding(ls, false)
 				}
-				if bindings[b].Secure {
-					return errors.Errorf("binding %s is used in both secure and plain bindings", b)
+				if bindings[ls].Secure {
+					return errors.Errorf("address %s is used in both secure and plain bindings", ls.Addr())
 				}
-				endpoints = append(endpoints, bindings[b].addEndpoint(b, eID, e))
+				endpoints = append(endpoints, bindings[ls].addEndpoint(eID, e))
 			}
 		}
 		if e.HTTPSMode != HTTPSModeDisabled {
 			enableHttps = true
-			for _, b := range e.TLSBindings {
-				if bindings[b] == nil {
-					bindings[b] = newBinding(true)
+			for _, ls := range e.TLSListeners {
+				if bindings[ls] == nil {
+					bindings[ls] = newBinding(ls, true)
 				}
-				if !bindings[b].Secure {
-					return errors.Errorf("binding %s is used in both secure and plain bindings", b)
+				if !bindings[ls].Secure {
+					return errors.Errorf("address %s is used in both secure and plain bindings", ls.Addr())
 				}
-				endpoints = append(endpoints, bindings[b].addEndpoint(b, eID, e))
+				endpoints = append(endpoints, bindings[ls].addEndpoint(eID, e))
 			}
 		}
 		i.endpoints[eID] = endpoints
@@ -132,7 +131,7 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 				}
 			})
 		}
-		for bAddr, b := range bindings {
+		for _, b := range bindings {
 			cfg := thttp.Config{Handler: b.handler()}
 			if b.Secure {
 				cfg.GetCertificate = func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -144,13 +143,7 @@ func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
 			}
 
 			spawn("server", parallel.Fail, func(ctx context.Context) error {
-				l, err := tnet.Listen(ctx, bAddr)
-				if err != nil {
-					return errors.WithStack(err)
-				}
-				defer l.Close()
-
-				return thttp.NewServer(l, cfg, thttp.Middleware(thttp.StandardMiddleware)).Run(ctx)
+				return thttp.NewServer(b.ls, cfg, thttp.Middleware(thttp.StandardMiddleware)).Run(ctx)
 			})
 		}
 
@@ -224,7 +217,6 @@ func containsDomain(domain string, domains map[string]struct{}) bool {
 
 type endpoint struct {
 	id             EndpointID
-	address        string
 	secure         bool
 	cfg            EndpointConfig
 	allowedMethods map[string]bool
@@ -445,16 +437,17 @@ func (e *endpoint) randomTarget() string {
 	return e.targets[rand.Intn(len(e.targets))]
 }
 
-func newBinding(secure bool) *binding {
+func newBinding(ls net.Listener, secure bool) *binding {
 	return &binding{
 		mux:    http.NewServeMux(),
+		ls:     ls,
 		Secure: secure,
 	}
 }
 
 type binding struct {
-	mux *http.ServeMux
-
+	mux    *http.ServeMux
+	ls     net.Listener
 	Secure bool
 }
 
@@ -462,8 +455,8 @@ func (b *binding) handler() http.Handler {
 	return b.mux
 }
 
-func (b *binding) addEndpoint(address string, id EndpointID, cfg EndpointConfig) *endpoint {
-	e := newEndpoint(address, b.Secure, id, cfg)
+func (b *binding) addEndpoint(id EndpointID, cfg EndpointConfig) *endpoint {
+	e := newEndpoint(b.Secure, id, cfg)
 	var h http.Handler = e
 	if cfg.MaxBodyLength > 0 {
 		h = http.MaxBytesHandler(h, cfg.MaxBodyLength)
@@ -494,7 +487,7 @@ func copyHeader(dst, src http.Header) {
 	}
 }
 
-func newEndpoint(address string, secure bool, id EndpointID, cfg EndpointConfig) *endpoint {
+func newEndpoint(secure bool, id EndpointID, cfg EndpointConfig) *endpoint {
 	allowedMethods := make(map[string]bool, len(cfg.AllowedMethods))
 	for _, m := range cfg.AllowedMethods {
 		allowedMethods[m] = true
@@ -504,7 +497,6 @@ func newEndpoint(address string, secure bool, id EndpointID, cfg EndpointConfig)
 		allowedDomains[d] = true
 	}
 	return &endpoint{
-		address:        address,
 		secure:         secure,
 		id:             id,
 		cfg:            cfg,
