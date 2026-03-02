@@ -62,6 +62,9 @@ type EndpointConfig struct {
 	// AllowedDomains are domains requests are accepted for.
 	AllowedDomains []string
 
+	// AllowedOrigins configures CORS for the origins.
+	AllowedOrigins []string
+
 	// AllowedMethods are allowed http methods.
 	AllowedMethods []string
 
@@ -144,6 +147,13 @@ func Endpoint(endpointID EndpointID, configurators ...EndpointConfigurator) Conf
 func Domains(domains ...string) EndpointConfigurator {
 	return func(c *ServiceEndpointConfig) {
 		c.Config.AllowedDomains = append(c.Config.AllowedDomains, domains...)
+	}
+}
+
+// Origins sets origins for CORS.
+func Origins(origins ...string) EndpointConfigurator {
+	return func(c *ServiceEndpointConfig) {
+		c.Config.AllowedOrigins = append(c.Config.AllowedOrigins, origins...)
 	}
 }
 
