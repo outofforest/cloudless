@@ -1,6 +1,10 @@
 package ingress
 
-import "github.com/outofforest/cloudless/pkg/wave"
+import (
+	"net"
+
+	"github.com/outofforest/cloudless/pkg/wave"
+)
 
 // Config defines configuration of HTTP HTTPIngress.
 type Config struct {
@@ -49,11 +53,11 @@ type EndpointConfig struct {
 	// HTTPSMode defines how https traffic is handled.
 	HTTPSMode HTTPSMode
 
-	// PlainBindings specify endpoints in form <ip>:<port> which HTTPIngress binds to for http traffic.
-	PlainBindings []string
+	// PlainListeners specify listeners which HTTPIngress binds to for http traffic.
+	PlainListeners []net.Listener
 
-	// TLSBindings specify endpoints in form <ip>:<port> which HTTPIngress binds to for https traffic.
-	TLSBindings []string
+	// TLSListeners specify listeners which HTTPIngress binds to for https traffic.
+	TLSListeners []net.Listener
 
 	// AllowedDomains are domains requests are accepted for.
 	AllowedDomains []string
@@ -74,25 +78,44 @@ type EndpointConfig struct {
 	AddSlashToDirs bool
 }
 
+// ServiceConfig defines configuration of HTTP ingress service.
+type ServiceConfig struct {
+	Config Config
+
+	// Endpoints defines HTTP endpoints inside ingress.
+	Endpoints map[EndpointID]ServiceEndpointConfig
+}
+
+// ServiceEndpointConfig describes configuration of http HTTPIngress endpoint.
+type ServiceEndpointConfig struct {
+	Config EndpointConfig
+
+	// PlainBindings specify endpoints in form <ip>:<port> which HTTPIngress binds to for http traffic.
+	PlainBindings []string
+
+	// TLSBindings specify endpoints in form <ip>:<port> which HTTPIngress binds to for https traffic.
+	TLSBindings []string
+}
+
 // Configurator is the function configuring ingress.
-type Configurator func(c *Config)
+type Configurator func(c *ServiceConfig)
 
 // Waves adds wave servers to send challenge requests to.
 func Waves(waves ...string) Configurator {
-	return func(c *Config) {
+	return func(c *ServiceConfig) {
 		for _, w := range waves {
-			c.WaveServers = append(c.WaveServers, wave.Address(w))
+			c.Config.WaveServers = append(c.Config.WaveServers, wave.Address(w))
 		}
 	}
 }
 
 // EndpointConfigurator is the function configuring endpoint.
-type EndpointConfigurator func(c *EndpointConfig)
+type EndpointConfigurator func(c *ServiceEndpointConfig)
 
 // Target adds target for an endpoint.
 func Target(endpointID EndpointID, host string, port uint16, path string) Configurator {
-	return func(c *Config) {
-		c.Targets[endpointID] = append(c.Targets[endpointID], TargetConfig{
+	return func(c *ServiceConfig) {
+		c.Config.Targets[endpointID] = append(c.Config.Targets[endpointID], TargetConfig{
 			Host: host,
 			Port: port,
 			Path: path,
@@ -102,10 +125,12 @@ func Target(endpointID EndpointID, host string, port uint16, path string) Config
 
 // Endpoint adds endpoint to the ingress.
 func Endpoint(endpointID EndpointID, configurators ...EndpointConfigurator) Configurator {
-	return func(c *Config) {
-		config := EndpointConfig{
-			Path:      "/",
-			HTTPSMode: HTTPSModeOnly,
+	return func(c *ServiceConfig) {
+		config := ServiceEndpointConfig{
+			Config: EndpointConfig{
+				Path:      "/",
+				HTTPSMode: HTTPSModeOnly,
+			},
 		}
 
 		for _, configurator := range configurators {
@@ -117,63 +142,63 @@ func Endpoint(endpointID EndpointID, configurators ...EndpointConfigurator) Conf
 
 // Domains sets serviced domains.
 func Domains(domains ...string) EndpointConfigurator {
-	return func(c *EndpointConfig) {
-		c.AllowedDomains = append(c.AllowedDomains, domains...)
+	return func(c *ServiceEndpointConfig) {
+		c.Config.AllowedDomains = append(c.Config.AllowedDomains, domains...)
 	}
 }
 
 // Methods sets serviced HTTP methods.
 func Methods(methods ...string) EndpointConfigurator {
-	return func(c *EndpointConfig) {
-		c.AllowedMethods = append(c.AllowedMethods, methods...)
+	return func(c *ServiceEndpointConfig) {
+		c.Config.AllowedMethods = append(c.Config.AllowedMethods, methods...)
 	}
 }
 
 // EnableWebsockets enables websockets.
 func EnableWebsockets() EndpointConfigurator {
-	return func(c *EndpointConfig) {
-		c.AllowWebsockets = true
+	return func(c *ServiceEndpointConfig) {
+		c.Config.AllowWebsockets = true
 	}
 }
 
 // RemoveWWW causes redirection of www.* domains to non-www ones.
 func RemoveWWW() EndpointConfigurator {
-	return func(c *EndpointConfig) {
-		c.RemoveWWWPrefix = true
+	return func(c *ServiceEndpointConfig) {
+		c.Config.RemoveWWWPrefix = true
 	}
 }
 
 // AddSlash causes redirection to slash-suffixed URL if URL does not end with slash or dotted (.sth) suffix.
 func AddSlash() EndpointConfigurator {
-	return func(c *EndpointConfig) {
-		c.AddSlashToDirs = true
+	return func(c *ServiceEndpointConfig) {
+		c.Config.AddSlashToDirs = true
 	}
 }
 
 // HTTPS configures mode of https operation.
 func HTTPS(httpsMode HTTPSMode) EndpointConfigurator {
-	return func(c *EndpointConfig) {
-		c.HTTPSMode = httpsMode
+	return func(c *ServiceEndpointConfig) {
+		c.Config.HTTPSMode = httpsMode
 	}
 }
 
 // Path sets path for the endpoint.
 func Path(path string) EndpointConfigurator {
-	return func(c *EndpointConfig) {
-		c.Path = path
+	return func(c *ServiceEndpointConfig) {
+		c.Config.Path = path
 	}
 }
 
 // TLSBindings configures socket bindings for HTTPS.
 func TLSBindings(bindings ...string) EndpointConfigurator {
-	return func(c *EndpointConfig) {
+	return func(c *ServiceEndpointConfig) {
 		c.TLSBindings = append(c.TLSBindings, bindings...)
 	}
 }
 
 // PlainBindings configures socket bindings for HTTP.
 func PlainBindings(bindings ...string) EndpointConfigurator {
-	return func(c *EndpointConfig) {
+	return func(c *ServiceEndpointConfig) {
 		c.PlainBindings = append(c.PlainBindings, bindings...)
 	}
 }
@@ -181,7 +206,7 @@ func PlainBindings(bindings ...string) EndpointConfigurator {
 // BodyLimit sets the maximum allowed size of the request body in bytes.
 // Requests exceeding this limit will be rejected.
 func BodyLimit(limit int64) EndpointConfigurator {
-	return func(c *EndpointConfig) {
-		c.MaxBodyLength = limit
+	return func(c *ServiceEndpointConfig) {
+		c.Config.MaxBodyLength = limit
 	}
 }
