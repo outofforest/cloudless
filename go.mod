@@ -25,7 +25,7 @@ require (
 	github.com/outofforest/logger v0.7.0
 	github.com/outofforest/mass v0.2.1
 	github.com/outofforest/parallel v0.2.3
-	github.com/outofforest/proton v0.20.0
+	github.com/outofforest/proton v0.21.0
 	github.com/outofforest/run v0.8.0
 	github.com/outofforest/tools v1.5.0
 	github.com/outofforest/wave v0.3.0
