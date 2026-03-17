@@ -216,12 +216,13 @@ func containsDomain(domain string, domains map[string]struct{}) bool {
 }
 
 type endpoint struct {
-	id             EndpointID
-	secure         bool
-	cfg            EndpointConfig
-	allowedMethods map[string]struct{}
-	allowedDomains map[string]struct{}
-	allowedOrigins map[string]struct{}
+	id                      EndpointID
+	secure                  bool
+	cfg                     EndpointConfig
+	allowedMethods          map[string]struct{}
+	allowedDomains          map[string]struct{}
+	allowedOrigins          map[string]struct{}
+	preflightAllowedMethods string
 
 	mu      sync.RWMutex
 	targets []string
@@ -255,6 +256,16 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
+		w.Header()["Access-Control-Allow-Origin"] = []string{origin}
+	}
+
+	if r.Method == http.MethodOptions {
+		if e.preflightAllowedMethods != "" {
+			w.Header()["Access-Control-Allow-Methods"] = []string{e.preflightAllowedMethods}
+		}
+		w.Header()["Access-Control-Allow-Headers"] = []string{"Content-Type,Authorization"}
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 
 	isHTTPS := r.TLS != nil
@@ -377,9 +388,6 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header()["Location"] = []string{newLocation}
 	}
-	if origin != "" {
-		w.Header()["Access-Control-Allow-Origin"] = []string{origin}
-	}
 	w.WriteHeader(resp.StatusCode)
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		http.Error(w, "Proxy Error", http.StatusInternalServerError)
@@ -487,9 +495,11 @@ func (b *binding) addEndpoint(id EndpointID, cfg EndpointConfig) *endpoint {
 }
 
 var skipHeaders = map[string]struct{}{
-	"X-Request-Id":                {},
-	"Location":                    {},
-	"Access-Control-Allow-Origin": {},
+	"X-Request-Id":                 {},
+	"Location":                     {},
+	"Access-Control-Allow-Origin":  {},
+	"Access-Control-Allow-Methods": {},
+	"Access-Control-Allow-Headers": {},
 }
 
 func copyHeader(dst, src http.Header) {
@@ -523,6 +533,9 @@ func newEndpoint(secure bool, id EndpointID, cfg EndpointConfig) *endpoint {
 		allowedMethods: allowedMethods,
 		allowedDomains: allowedDomains,
 		allowedOrigins: allowedOrigins,
+		preflightAllowedMethods: strings.Join(lo.Filter(lo.Keys(allowedMethods), func(method string, i int) bool {
+			return method != http.MethodOptions
+		}), ","),
 	}
 }
 
