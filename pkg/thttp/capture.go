@@ -12,12 +12,16 @@ func CaptureStatus(w http.ResponseWriter, status *int) http.ResponseWriter {
 	if h, ok := w.(http.Hijacker); ok {
 		cs.Hijacker = h
 	}
+	if f, ok := w.(http.Flusher); ok {
+		cs.Flusher = f
+	}
 	return cs
 }
 
 type captureStatus struct {
 	http.ResponseWriter
 	http.Hijacker
+	http.Flusher
 
 	status *int
 }

@@ -232,6 +232,10 @@ type endpoint struct {
 //
 //nolint:gocyclo
 func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// FIXME (wojciech): Support websockets over HTTP2:
+	// if r.Method == http.MethodConnect && r.Header.Get(":protocol") == "websocket" {
+	// Use https://github.com/coder/websocket library which handles both http 1.1 and 2.0
+
 	if _, exists := e.allowedMethods[r.Method]; !exists {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -360,6 +364,7 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Error("Error on sending request to target", zap.Error(err))
 		return
 	}
+
 	br := bufio.NewReader(targetConn)
 	resp, err := http.ReadResponse(br, req)
 	if err != nil {
@@ -389,9 +394,27 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header()["Location"] = []string{newLocation}
 	}
 	w.WriteHeader(resp.StatusCode)
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		http.Error(w, "Proxy Error", http.StatusInternalServerError)
-		log.Error("Error on copying response", zap.Error(err))
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return
+	}
+
+	buf := make([]byte, 4096)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			if _, err := w.Write(buf[:n]); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return
+		}
 	}
 
 	//nolint:nestif
