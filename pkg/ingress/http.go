@@ -426,8 +426,6 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// FIXME (wojciech): The buffer, second argument, might contain some remaining data, we must send them
-		//  to the other side.
 		clientConn, _, err := h.Hijack()
 		if err != nil {
 			http.Error(w, "Proxy Error", http.StatusInternalServerError)
