@@ -68,6 +68,9 @@ type EndpointConfig struct {
 	// AllowedMethods are allowed http methods.
 	AllowedMethods []string
 
+	// CachedContentTypes is the list of content types to gzip and cache in memory.
+	CachedContentTypes []string
+
 	// AllowWebsockets enables websocket connections.
 	AllowWebsockets bool
 
@@ -161,6 +164,13 @@ func Origins(origins ...string) EndpointConfigurator {
 func Methods(methods ...string) EndpointConfigurator {
 	return func(c *ServiceEndpointConfig) {
 		c.Config.AllowedMethods = append(c.Config.AllowedMethods, methods...)
+	}
+}
+
+// CachedContentTypes defines which content types are gzipped and cached in memory.
+func CachedContentTypes(contentTypes ...string) EndpointConfigurator {
+	return func(c *ServiceEndpointConfig) {
+		c.Config.CachedContentTypes = append(c.Config.CachedContentTypes, contentTypes...)
 	}
 }
 

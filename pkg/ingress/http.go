@@ -2,6 +2,8 @@ package ingress
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -162,7 +164,7 @@ func (i *HTTPIngress) registerTargets(endpointID EndpointID, targets []TargetCon
 		}
 
 		for _, e := range i.endpoints[endpointID] {
-			e.registerTarget(t)
+			e.targets = append(e.targets, net.JoinHostPort(t.Host, strconv.FormatUint(uint64(t.Port), 10))+t.Path)
 		}
 	}
 	return nil
@@ -215,6 +217,11 @@ func containsDomain(domain string, domains map[string]struct{}) bool {
 	}
 }
 
+type cacheItem struct {
+	ContentType string
+	Content     []byte
+}
+
 type endpoint struct {
 	id                      EndpointID
 	secure                  bool
@@ -223,9 +230,11 @@ type endpoint struct {
 	allowedDomains          map[string]struct{}
 	allowedOrigins          map[string]struct{}
 	preflightAllowedMethods string
+	targets                 []string
+	cachedContentTypes      map[string]struct{}
 
-	mu      sync.RWMutex
-	targets []string
+	mu    sync.RWMutex
+	cache map[string]*cacheItem
 }
 
 // ServeHTTP serves http traffic.
@@ -312,6 +321,21 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	urlStr := url.String()
+	if !isWebsocket && r.Method == http.MethodGet {
+		e.mu.RLock()
+		content := e.cache[urlStr]
+		e.mu.RUnlock()
+
+		if content != nil {
+			w.Header().Set("Content-Type", content.ContentType)
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Content-Length", strconv.Itoa(len(content.Content)))
+			_, _ = w.Write(content.Content)
+			return
+		}
+	}
+
 	log := logger.Get(r.Context())
 
 	target := e.randomTarget()
@@ -377,6 +401,23 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
+	var compressedBuf *bytes.Buffer
+	var gzipWriter *gzip.Writer
+	contentType := resp.Header.Get("Content-Type")
+	var respReader io.Reader = resp.Body
+	if !isWebsocket && r.Method == http.MethodGet && contentType != "" {
+		ct := contentType
+		if i := strings.Index(ct, ";"); i > 0 {
+			ct = ct[:i]
+		}
+		if _, exists := e.cachedContentTypes[ct]; exists {
+			compressedBuf = bytes.NewBuffer(nil)
+			gzipWriter = gzip.NewWriter(compressedBuf)
+			defer gzipWriter.Close()
+			respReader = io.TeeReader(respReader, gzipWriter)
+		}
+	}
+
 	copyHeader(w.Header(), resp.Header)
 	if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusFound {
 		newLocation := resp.Header.Get("Location")
@@ -402,7 +443,7 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	buf := make([]byte, 4096)
 	for {
-		n, err := resp.Body.Read(buf)
+		n, err := respReader.Read(buf)
 		if n > 0 {
 			if _, err := w.Write(buf[:n]); err != nil {
 				return
@@ -415,6 +456,19 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+	}
+
+	if gzipWriter != nil {
+		if err := gzipWriter.Flush(); err != nil {
+			return
+		}
+		e.mu.Lock()
+		e.cache[urlStr] = &cacheItem{
+			ContentType: contentType,
+			Content:     compressedBuf.Bytes(),
+		}
+		e.mu.Unlock()
+		return
 	}
 
 	//nolint:nestif
@@ -465,17 +519,7 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (e *endpoint) registerTarget(target TargetConfig) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	e.targets = append(e.targets, net.JoinHostPort(target.Host, strconv.FormatUint(uint64(target.Port), 10))+target.Path)
-}
-
 func (e *endpoint) randomTarget() string {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
 	if len(e.targets) == 0 {
 		return ""
 	}
@@ -549,6 +593,12 @@ func newEndpoint(secure bool, id EndpointID, cfg EndpointConfig) *endpoint {
 	for _, d := range cfg.AllowedOrigins {
 		allowedOrigins[d] = struct{}{}
 	}
+
+	cachedContentTypes := make(map[string]struct{}, len(cfg.CachedContentTypes))
+	for _, ct := range cfg.CachedContentTypes {
+		cachedContentTypes[ct] = struct{}{}
+	}
+
 	return &endpoint{
 		secure:         secure,
 		id:             id,
@@ -559,6 +609,8 @@ func newEndpoint(secure bool, id EndpointID, cfg EndpointConfig) *endpoint {
 		preflightAllowedMethods: strings.Join(lo.Filter(lo.Keys(allowedMethods), func(method string, i int) bool {
 			return method != http.MethodOptions
 		}), ","),
+		cachedContentTypes: cachedContentTypes,
+		cache:              map[string]*cacheItem{},
 	}
 }
 
