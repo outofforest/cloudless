@@ -101,6 +101,7 @@ func monitoringBox(metricServers []string) host.Configurator {
 			ingress.Service(
 				ingress.Endpoint("grafana",
 					ingress.Domains("grafana.mon.test"),
+					ingress.Origins("http://grafana.mon.test"),
 					ingress.HTTPS(ingress.HTTPSModeDisabled),
 					ingress.Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete),
 					ingress.BodyLimit(4096),
