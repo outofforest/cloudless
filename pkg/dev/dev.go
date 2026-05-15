@@ -106,6 +106,7 @@ func devBox() host.Configurator {
 			ingress.Service(
 				ingress.Endpoint("mail",
 					ingress.Domains("mail.dev.test"),
+					ingress.Origins("http://mail.dev.test"),
 					ingress.HTTPS(ingress.HTTPSModeDisabled),
 					ingress.Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete),
 					ingress.BodyLimit(10*1024*1024),
