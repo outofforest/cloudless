@@ -57,7 +57,7 @@ func Service(configurators ...Configurator) host.Configurator {
 			lss = append(lss, tlsLss...)
 
 			eConfig.PlainListeners = plainLss
-			eConfig.PlainListeners = tlsLss
+			eConfig.TLSListeners = tlsLss
 
 			serviceConfig.Config.Endpoints[eID] = eConfig
 		}
