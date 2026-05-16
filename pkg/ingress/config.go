@@ -226,7 +226,6 @@ func PlainBindings(bindings ...string) EndpointConfigurator {
 		for _, b := range bindings {
 			c.PlainBindings[b] = struct{}{}
 		}
-
 	}
 }
 
