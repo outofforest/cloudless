@@ -31,7 +31,6 @@ import (
 	"github.com/outofforest/cloudless/pkg/wait"
 	"github.com/outofforest/libexec"
 	"github.com/outofforest/logger"
-	"github.com/outofforest/parallel"
 )
 
 const containersDir = cloudless.BaseDir + "/containers"
@@ -89,7 +88,7 @@ func New(name string, configurators ...Configurator) host.Configurator {
 
 	return cloudless.Join(
 		cloudless.KernelModules(kernel.Module{Name: "veth"}),
-		cloudless.Service("container-"+name, parallel.Fail, func(ctx context.Context) error {
+		cloudless.Service("container-"+name, func(ctx context.Context) error {
 			cmd, stdInCloser, err := command(ctx, config)
 			if err != nil {
 				return err
@@ -147,7 +146,7 @@ func RunImage(imageTag string, configurators ...RunImageConfigurator) host.Confi
 		cloudless.RequireContainers(imageTag),
 		cloudless.IsContainer(),
 		cloudless.Prune(prune(imageTag)),
-		cloudless.Service("containerImage", parallel.Fail, func(ctx context.Context) error {
+		cloudless.Service("containerImage", func(ctx context.Context) error {
 			log := logger.Get(ctx)
 
 			ic, err := installImage(ctx, imageTag, c.ContainerMirrors())

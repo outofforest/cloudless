@@ -21,7 +21,7 @@ const (
 
 // PowerService creates new ACPI service for powering off and rebooting the host.
 func PowerService() host.Configurator {
-	return cloudless.Service("acpi-power", parallel.Fail, func(ctx context.Context) error {
+	return cloudless.Service("acpi-power", func(ctx context.Context) error {
 		conn, err := genetlink.Dial(nil)
 		if err != nil {
 			return errors.WithStack(err)

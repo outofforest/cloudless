@@ -4,12 +4,9 @@ import (
 	"context"
 	"net"
 
-	"github.com/pkg/errors"
-
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/tnet"
-	"github.com/outofforest/parallel"
 )
 
 const (
@@ -22,7 +19,7 @@ const (
 
 // Service returns ingress service.
 func Service(configurators ...Configurator) host.Configurator {
-	return cloudless.Service("ingress", parallel.Fail, func(ctx context.Context) error {
+	return cloudless.Service("ingress", func(ctx context.Context) error {
 		serviceConfig := ServiceConfig{
 			Config: Config{
 				Endpoints: map[EndpointID]EndpointConfig{},
@@ -71,7 +68,7 @@ func createListeners(ctx context.Context, bindings []string) ([]net.Listener, er
 	for _, bAddr := range bindings {
 		ls, err := tnet.Listen(ctx, bAddr)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, err
 		}
 		lss = append(lss, ls)
 	}

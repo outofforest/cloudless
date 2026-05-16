@@ -323,11 +323,10 @@ func Prepare(prepares ...host.PrepareFn) host.Configurator {
 }
 
 // Service starts service.
-func Service(name string, onExit parallel.OnExit, task parallel.Task) host.Configurator {
+func Service(name string, task parallel.Task) host.Configurator {
 	return func(c *host.Configuration) error {
 		c.StartServices(host.ServiceConfig{
 			Name:   name,
-			OnExit: onExit,
 			TaskFn: task,
 		})
 		return nil

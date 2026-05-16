@@ -30,7 +30,7 @@ import (
 
 // Service returns new acme client service.
 func Service(appName, email, hostname string, configurators ...Configurator) host.Configurator {
-	return cloudless.Service("mailer", parallel.Fail, func(ctx context.Context) error {
+	return cloudless.Service("mailer", func(ctx context.Context) error {
 		log := logger.Get(ctx)
 
 		var config Config
