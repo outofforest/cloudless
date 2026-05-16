@@ -49,7 +49,7 @@ type HTTPIngress struct {
 }
 
 // Run runs the ingress servers.
-func (i *HTTPIngress) Run(ctx context.Context) (retErr error) {
+func (i *HTTPIngress) Run(ctx context.Context) error {
 	bindings := map[net.Listener]*binding{}
 
 	var enableHttps bool
