@@ -16,7 +16,6 @@ import (
 	"github.com/outofforest/cloudless/pkg/thttp"
 	"github.com/outofforest/cloudless/pkg/tnet"
 	"github.com/outofforest/logger"
-	"github.com/outofforest/parallel"
 )
 
 // MetricPort is the port metric server listens on.
@@ -50,7 +49,7 @@ func MetricsServer(configurators ...Configurator) host.Configurator {
 	var c host.SealedConfiguration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
-		cloudless.Service("eye-metrics", parallel.Fail, func(ctx context.Context) error {
+		cloudless.Service("eye-metrics", func(ctx context.Context) error {
 			ls, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", MetricPort))
 			if err != nil {
 				return errors.WithStack(err)

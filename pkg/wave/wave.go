@@ -9,7 +9,6 @@ import (
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/tnet"
-	"github.com/outofforest/parallel"
 	"github.com/outofforest/wave"
 )
 
@@ -30,7 +29,7 @@ func Service(maxMessageSize uint64, configurators ...Configurator) host.Configur
 		configurator(&config)
 	}
 
-	return cloudless.Service("wave", parallel.Fail, func(ctx context.Context) error {
+	return cloudless.Service("wave", func(ctx context.Context) error {
 		ls, err := net.ListenTCP("tcp4", &net.TCPAddr{
 			IP:   net.IPv4zero,
 			Port: Port,

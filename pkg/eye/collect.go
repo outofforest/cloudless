@@ -41,7 +41,7 @@ func SystemMonitor() host.Configurator {
 
 	return cloudless.Join(
 		cloudless.Metrics(sets...),
-		cloudless.Service("eye", parallel.Fail, func(ctx context.Context) error {
+		cloudless.Service("eye", func(ctx context.Context) error {
 			return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 				for _, t := range tasks {
 					spawn(t.Name, parallel.Fail, t.Task)

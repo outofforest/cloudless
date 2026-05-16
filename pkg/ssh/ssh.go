@@ -36,7 +36,7 @@ var shells = []string{
 
 // Service returns SSH service.
 func Service(authorizedKeys ...string) host.Configurator {
-	return cloudless.Service("ssh", parallel.Fail, func(ctx context.Context) error {
+	return cloudless.Service("ssh", func(ctx context.Context) error {
 		return run(ctx, authorizedKeys)
 	})
 }

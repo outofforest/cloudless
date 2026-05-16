@@ -15,7 +15,6 @@ import (
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/thttp"
 	"github.com/outofforest/libexec"
-	"github.com/outofforest/parallel"
 )
 
 // Port is the port yum listens on.
@@ -28,7 +27,7 @@ func Service(appName string, release uint64) host.Configurator {
 	var c host.SealedConfiguration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
-		cloudless.Service("yum", parallel.Continue, func(ctx context.Context) error {
+		cloudless.Service("yum", func(ctx context.Context) error {
 			packages := c.Packages()
 			if len(packages) == 0 {
 				return nil
@@ -48,7 +47,11 @@ func Service(appName string, release uint64) host.Configurator {
 			server := thttp.NewServer(l, thttp.Config{
 				Handler: http.FileServer(http.Dir(repoDir)),
 			})
-			return server.Run(ctx)
+			if err := server.Run(ctx); err != nil {
+				return err
+			}
+			<-ctx.Done()
+			return errors.WithStack(ctx.Err())
 		}),
 	)
 }

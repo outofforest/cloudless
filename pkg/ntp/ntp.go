@@ -13,7 +13,6 @@ import (
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/logger"
-	"github.com/outofforest/parallel"
 )
 
 var servers = []string{
@@ -37,7 +36,7 @@ var servers = []string{
 
 // Service creates new NTP service.
 func Service() host.Configurator {
-	return cloudless.Service("ntp", parallel.Fail, func(ctx context.Context) error {
+	return cloudless.Service("ntp", func(ctx context.Context) error {
 		log := logger.Get(ctx)
 		rnd := rand.New(rand.NewSource(time.Now().Unix()))
 		for {

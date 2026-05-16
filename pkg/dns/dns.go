@@ -59,7 +59,7 @@ func Service(configurators ...Configurator) host.Configurator {
 		configurator(&config)
 	}
 
-	return cloudless.Service("dns", parallel.Fail, func(ctx context.Context) error {
+	return cloudless.Service("dns", func(ctx context.Context) error {
 		return run(ctx, config)
 	})
 }

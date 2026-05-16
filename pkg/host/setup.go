@@ -52,11 +52,14 @@ const (
 )
 
 var (
+	// ErrPower is the root error for power off and reboot.
+	ErrPower = errors.New("power")
+
 	// ErrPowerOff means that host should be powered off.
-	ErrPowerOff = errors.New("power off requested")
+	ErrPowerOff = errors.Wrap(ErrPower, "power off requested")
 
 	// ErrReboot means that host should be rebooted.
-	ErrReboot = errors.New("reboot requested")
+	ErrReboot = errors.Wrap(ErrPower, "reboot requested")
 
 	// ErrNotThisHost is an indicator that spec is for different host.
 	ErrNotThisHost = errors.New("not this host")
@@ -93,7 +96,6 @@ type VLANConfig struct {
 // ServiceConfig contains service configuration.
 type ServiceConfig struct {
 	Name   string
-	OnExit parallel.OnExit
 	TaskFn parallel.Task
 }
 
@@ -962,13 +964,28 @@ func runServices(ctx context.Context, services []ServiceConfig) error {
 
 			return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 				for _, s := range services {
-					spawn(s.Name, s.OnExit, func(ctx context.Context) error {
+					spawn(s.Name, parallel.Fail, func(ctx context.Context) error {
 						log := logger.Get(ctx)
 
-						log.Info("Starting service")
-						defer log.Info("Service stopped")
+						for {
+							log.Info("Starting service.")
 
-						return s.TaskFn(ctx)
+							err := s.TaskFn(ctx)
+							switch {
+							case ctx.Err() != nil || errors.Is(err, ErrPower):
+								return err
+							case err == nil:
+								log.Info("Service quit.")
+							default:
+								log.Info("Service failed.", zap.Error(err))
+							}
+
+							select {
+							case <-ctx.Done():
+								return errors.WithStack(ctx.Err())
+							case <-time.After(5 * time.Second):
+							}
+						}
 					})
 				}
 				return nil
@@ -1305,8 +1322,7 @@ func mountFile(m mountConfig, mode os.FileMode) error {
 func setupVirt(c *Configuration) {
 	c.RequirePackages(virtPackages...)
 	c.StartServices(ServiceConfig{
-		Name:   "virt",
-		OnExit: parallel.Fail,
+		Name: "virt",
 		TaskFn: func(ctx context.Context) error {
 			configF, err := os.OpenFile("/etc/libvirt/qemu.conf", os.O_WRONLY|os.O_APPEND, 0o644)
 			if err != nil {

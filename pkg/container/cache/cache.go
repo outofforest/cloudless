@@ -25,7 +25,6 @@ import (
 	"github.com/outofforest/cloudless/pkg/retry"
 	"github.com/outofforest/cloudless/pkg/thttp"
 	"github.com/outofforest/logger"
-	"github.com/outofforest/parallel"
 )
 
 // Port is the port cache listens on.
@@ -53,14 +52,18 @@ func Service(appName string, release uint64) host.Configurator {
 	var c host.SealedConfiguration
 	return cloudless.Join(
 		cloudless.Configuration(&c),
-		cloudless.Service("containercache", parallel.Continue, func(ctx context.Context) error {
+		cloudless.Service("containercache", func(ctx context.Context) error {
 			images := c.ContainerImages()
 			if len(images) == 0 {
 				return nil
 			}
 
 			repoDir := filepath.Join(cloudless.AppDir(appName), strconv.FormatUint(release, 10))
-			return run(ctx, repoDir, images)
+			if err := run(ctx, repoDir, images); err != nil {
+				return err
+			}
+			<-ctx.Done()
+			return errors.WithStack(ctx.Err())
 		}),
 	)
 }

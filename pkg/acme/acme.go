@@ -44,7 +44,7 @@ const (
 func Service(appName, email string, dirConfig DirectoryConfig, configurators ...Configurator) host.Configurator {
 	appDir := cloudless.AppDir(appName)
 
-	return cloudless.Service("acme", parallel.Fail, func(ctx context.Context) error {
+	return cloudless.Service("acme", func(ctx context.Context) error {
 		config := Config{
 			Email:       email,
 			AccountFile: filepath.Join(appDir, dirConfig.Name, accountFile),
