@@ -97,10 +97,10 @@ type ServiceEndpointConfig struct {
 	Config EndpointConfig
 
 	// PlainBindings specify endpoints in form <ip>:<port> which HTTPIngress binds to for http traffic.
-	PlainBindings []string
+	PlainBindings map[string]struct{}
 
 	// TLSBindings specify endpoints in form <ip>:<port> which HTTPIngress binds to for https traffic.
-	TLSBindings []string
+	TLSBindings map[string]struct{}
 }
 
 // Configurator is the function configuring ingress.
@@ -137,6 +137,8 @@ func Endpoint(endpointID EndpointID, configurators ...EndpointConfigurator) Conf
 				Path:      "/",
 				HTTPSMode: HTTPSModeOnly,
 			},
+			PlainBindings: map[string]struct{}{},
+			TLSBindings:   map[string]struct{}{},
 		}
 
 		for _, configurator := range configurators {
@@ -212,14 +214,19 @@ func Path(path string) EndpointConfigurator {
 // TLSBindings configures socket bindings for HTTPS.
 func TLSBindings(bindings ...string) EndpointConfigurator {
 	return func(c *ServiceEndpointConfig) {
-		c.TLSBindings = append(c.TLSBindings, bindings...)
+		for _, b := range bindings {
+			c.TLSBindings[b] = struct{}{}
+		}
 	}
 }
 
 // PlainBindings configures socket bindings for HTTP.
 func PlainBindings(bindings ...string) EndpointConfigurator {
 	return func(c *ServiceEndpointConfig) {
-		c.PlainBindings = append(c.PlainBindings, bindings...)
+		for _, b := range bindings {
+			c.PlainBindings[b] = struct{}{}
+		}
+
 	}
 }
 

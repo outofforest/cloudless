@@ -31,7 +31,7 @@ func Service(configurators ...Configurator) host.Configurator {
 		for _, configurator := range configurators {
 			configurator(&serviceConfig)
 		}
-		var lss []net.Listener
+		lss := map[string]net.Listener{}
 		defer func() {
 			for _, ls := range lss {
 				_ = ls.Close()
@@ -41,17 +41,15 @@ func Service(configurators ...Configurator) host.Configurator {
 		for eID, e := range serviceConfig.Endpoints {
 			eConfig := e.Config
 
-			plainLss, err := createListeners(ctx, e.PlainBindings)
+			plainLss, err := createListeners(ctx, e.PlainBindings, lss)
 			if err != nil {
 				return err
 			}
-			lss = append(lss, plainLss...)
 
-			tlsLss, err := createListeners(ctx, e.TLSBindings)
+			tlsLss, err := createListeners(ctx, e.TLSBindings, lss)
 			if err != nil {
 				return err
 			}
-			lss = append(lss, tlsLss...)
 
 			eConfig.PlainListeners = plainLss
 			eConfig.TLSListeners = tlsLss
@@ -63,12 +61,21 @@ func Service(configurators ...Configurator) host.Configurator {
 	})
 }
 
-func createListeners(ctx context.Context, bindings []string) ([]net.Listener, error) {
+func createListeners(
+	ctx context.Context,
+	bindings map[string]struct{},
+	listeners map[string]net.Listener,
+) ([]net.Listener, error) {
 	lss := make([]net.Listener, 0, len(bindings))
-	for _, bAddr := range bindings {
-		ls, err := tnet.Listen(ctx, bAddr)
-		if err != nil {
-			return nil, err
+	for bAddr := range bindings {
+		ls := listeners[bAddr]
+		if ls == nil {
+			var err error
+			ls, err = tnet.Listen(ctx, bAddr)
+			if err != nil {
+				return nil, err
+			}
+			listeners[bAddr] = ls
 		}
 		lss = append(lss, ls)
 	}
