@@ -536,8 +536,7 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 					return err
 				}
 			}
-
-			if err := configureEnv(cfg.hostname); err != nil {
+			if err := configureEnv(); err != nil {
 				return err
 			}
 			if err := configureMounts(ctx, cfg.mounts); err != nil {
@@ -633,6 +632,12 @@ func ConfigureKernelModules(kernelModules []kernel.Module) error {
 }
 
 func configureHostname(hostname string) error {
+	if err := syscall.Sethostname([]byte(hostname)); err != nil {
+		return errors.WithStack(err)
+	}
+	if err := os.Setenv("HOSTNAME", hostname); err != nil {
+		return errors.WithStack(err)
+	}
 	return errors.WithStack(os.WriteFile("/etc/hostname", []byte(hostname+"\n"), 0o644))
 }
 
@@ -974,17 +979,12 @@ func runServices(ctx context.Context, services []ServiceConfig) error {
 	})
 }
 
-func configureEnv(hostname string) error {
-	if err := syscall.Sethostname([]byte(hostname)); err != nil {
-		return errors.WithStack(err)
-	}
-
+func configureEnv() error {
 	for k, v := range map[string]string{
-		"PATH":     "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin",
-		"HOME":     "/root",
-		"USER":     "root",
-		"TERM":     "xterm-256color",
-		"HOSTNAME": hostname,
+		"PATH": "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin",
+		"HOME": "/root",
+		"USER": "root",
+		"TERM": "xterm-256color",
 	} {
 		if err := os.Setenv(k, v); err != nil {
 			return errors.WithStack(err)
