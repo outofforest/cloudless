@@ -8,8 +8,12 @@ type ClientConfig struct {
 
 // NewClientConfig creates new wave config fro client.
 func NewClientConfig(maxMessageSize uint64, servers ...string) ClientConfig {
-	return ClientConfig{
+	c := ClientConfig{
 		MaxMessageSize: maxMessageSize,
-		Servers:        servers,
+		Servers:        make([]string, 0, len(servers)),
 	}
+	for _, s := range servers {
+		c.Servers = append(c.Servers, Address(s))
+	}
+	return c
 }
