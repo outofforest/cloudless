@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/samber/lo"
 
 	"github.com/outofforest/cloudless/pkg/dns/dkim/wire"
 	"github.com/outofforest/wave"
@@ -25,7 +26,7 @@ type Config struct {
 }
 
 // NewConfig creates new DKIM config.
-func NewConfig(appName string) (Config, error) {
+func NewConfig(appName string) Config {
 	var timeBytes [8]byte
 	binary.BigEndian.PutUint64(timeBytes[:], uint64(time.Now().Unix()))
 
@@ -34,10 +35,7 @@ func NewConfig(appName string) (Config, error) {
 	}
 
 	// TODO (wojciech): Change to ED25519 once smtp servers support it finally.
-	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return Config{}, errors.WithStack(err)
-	}
+	privKey := lo.Must(rsa.GenerateKey(rand.Reader, 2048))
 	privKeyBytes := x509.MarshalPKCS1PrivateKey(privKey)
 
 	config.PublicKey = &privKey.PublicKey
@@ -46,7 +44,7 @@ func NewConfig(appName string) (Config, error) {
 		Bytes: privKeyBytes,
 	})
 
-	return config, nil
+	return config
 }
 
 // RunClient runs wave client sending DKIM config to DNS servers.

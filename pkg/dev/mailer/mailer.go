@@ -2,7 +2,6 @@ package mailer
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -23,15 +22,9 @@ func Service(appName, email string, config mailing.Config) host.Configurator {
 	return cloudless.Service("mailer", func(ctx context.Context) error {
 		log := logger.Get(ctx)
 
-		dkimConfig, err := dnsdkim.NewConfig(appName)
-		if err != nil {
-			return err
-		}
+		dkimConfig := dnsdkim.NewConfig(appName)
 
-		parts := strings.SplitN(email, "@", 2)
-		domain := parts[1]
-
-		log.Info("Starting mailer", zap.String("dkimDomain", dnsdkim.Domain(dkimConfig.Provider, domain)))
+		log.Info("Starting mailer.")
 
 		return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 			waveClient, _, err := wave.NewClient(wave.ClientConfig{
