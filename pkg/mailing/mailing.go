@@ -3,6 +3,7 @@ package mailing
 import (
 	"context"
 	"net"
+	netmail "net/mail"
 	"strings"
 
 	"github.com/google/uuid"
@@ -25,10 +26,16 @@ func SendMessage(ctx context.Context, config Config, dkimConfig dnsdkim.Config, 
 		return errors.WithStack(err)
 	}
 
-	sender, err := msg.GetSender(false)
+	senderStr, err := msg.GetSender(false)
 	if err != nil {
 		return errors.WithStack(err)
 	}
+
+	senderParsed, err := netmail.ParseAddress(senderStr)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	sender := senderParsed.Address
 
 	senderDomain, err := domainFromEmail(sender)
 	if err != nil {
@@ -36,8 +43,13 @@ func SendMessage(ctx context.Context, config Config, dkimConfig dnsdkim.Config, 
 	}
 
 	msg.SetMessageIDWithValue(uuid.New().String() + "@" + senderDomain)
-	for _, recipient := range recipients {
-		if err := send(ctx, config, dkimConfig, msg, recipient); err != nil {
+	for _, recipientStr := range recipients {
+		recipientParsed, err := netmail.ParseAddress(recipientStr)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+
+		if err := send(ctx, config, dkimConfig, msg, recipientParsed.Address); err != nil {
 			return err
 		}
 	}
