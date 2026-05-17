@@ -5,6 +5,8 @@ import (
 	"net"
 	"strings"
 
+	netmail "net/mail"
+
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/wneessen/go-mail"
@@ -25,19 +27,30 @@ func SendMessage(ctx context.Context, config Config, dkimConfig dnsdkim.Config, 
 		return errors.WithStack(err)
 	}
 
-	sender, err := msg.GetSender(false)
+	senderStr, err := msg.GetSender(false)
 	if err != nil {
 		return errors.WithStack(err)
 	}
 
+	senderParsed, err := netmail.ParseAddress(senderStr)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	sender := senderParsed.Address
+	
 	senderDomain, err := domainFromEmail(sender)
 	if err != nil {
 		return err
 	}
 
 	msg.SetMessageIDWithValue(uuid.New().String() + "@" + senderDomain)
-	for _, recipient := range recipients {
-		if err := send(ctx, config, dkimConfig, msg, recipient); err != nil {
+	for _, recipientStr := range recipients {
+		recipientParsed, err := netmail.ParseAddress(recipientStr)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+
+		if err := send(ctx, config, dkimConfig, msg, recipientParsed.Address); err != nil {
 			return err
 		}
 	}
