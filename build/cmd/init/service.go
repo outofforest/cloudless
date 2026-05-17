@@ -8,6 +8,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/dev/mailer"
 	"github.com/outofforest/cloudless/pkg/dns"
 	"github.com/outofforest/cloudless/pkg/eye"
+	"github.com/outofforest/cloudless/pkg/mailing"
 	"github.com/outofforest/cloudless/pkg/shield"
 	"github.com/outofforest/cloudless/pkg/wave"
 )
@@ -73,9 +74,11 @@ var HostService = Join(
 	Container("mailer",
 		Network("02:00:00:00:01:05", "igw", IPs("10.255.255.5/24")),
 		Gateway("10.255.255.1"),
-		mailer.Service("mailer", "wojtek@app.test", "mailer.app.test",
-			mailer.Waves("10.255.255.2"),
-			mailer.DNS("10.255.255.3:53"),
+		mailer.Service("mailer", "wojtek@app.test",
+			mailing.NewConfig("mailer.app.test",
+				wave.NewClientConfig(2*1024, "10.255.255.2"),
+				mailing.NewDNSConfig("10.255.255.3:53"),
+			),
 		),
 	),
 )

@@ -21,12 +21,10 @@ func Address(host string) string {
 }
 
 // Service returns Wave service.
-func Service(maxMessageSize uint64, configurators ...Configurator) host.Configurator {
+func Service(maxMessageSize uint64, servers ...string) host.Configurator {
 	config := wave.ServerConfig{
 		MaxMessageSize: maxMessageSize,
-	}
-	for _, configurator := range configurators {
-		configurator(&config)
+		Servers:        servers,
 	}
 
 	return cloudless.Service("wave", func(ctx context.Context) error {
