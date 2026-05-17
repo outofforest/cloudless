@@ -3,9 +3,8 @@ package mailing
 import (
 	"context"
 	"net"
-	"strings"
-
 	netmail "net/mail"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -37,7 +36,7 @@ func SendMessage(ctx context.Context, config Config, dkimConfig dnsdkim.Config, 
 		return errors.WithStack(err)
 	}
 	sender := senderParsed.Address
-	
+
 	senderDomain, err := domainFromEmail(sender)
 	if err != nil {
 		return err
