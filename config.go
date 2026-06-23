@@ -173,6 +173,15 @@ func Route(destination, gateway string) host.Configurator {
 	}
 }
 
+// Resolve defines domain to IP mapping.
+func Resolve(domain, ip string) host.Configurator {
+	ipParsed := parse.IP(ip)
+	return func(c *host.Configuration) error {
+		c.AddHost(domain, ipParsed)
+		return nil
+	}
+}
+
 // InterfaceConfigurator is a type alias for functions that configure a specific network interface.
 type InterfaceConfigurator func(c *host.InterfaceConfig)
 
