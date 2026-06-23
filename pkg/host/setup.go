@@ -203,6 +203,7 @@ type Configuration struct {
 	gateway             net.IP
 	routes              []Route
 	dnses               []net.IP
+	hosts               map[string]net.IP
 	yumMirrors          []string
 	containerMirrors    []string
 	networks            []InterfaceConfig
@@ -224,6 +225,7 @@ func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
 		containerOnly:       c.containerOnly,
 		pkgRepo:             c.pkgRepo,
 		containerImagesRepo: c.containerImagesRepo,
+		hosts:               map[string]net.IP{},
 	}
 	return c2, func() {
 		if c2.remoteLoggingConfig.URL != "" {
@@ -258,6 +260,10 @@ func NewSubconfiguration(c *Configuration) (*Configuration, func()) {
 		c.Prune(c2.prune...)
 		c.Prepare(c2.prepare...)
 		c.StartServices(c2.services...)
+
+		for host, ip := range c2.hosts {
+			c.AddHost(host, ip)
+		}
 	}
 }
 
@@ -363,6 +369,11 @@ func (c *Configuration) AddDNSes(dnses ...net.IP) {
 	c.dnses = append(c.dnses, dnses...)
 }
 
+// AddHost adds host to IP mapping.
+func (c *Configuration) AddHost(host string, ip net.IP) {
+	c.hosts[host] = ip
+}
+
 // AddYumMirrors adds package repository mirrors.
 func (c *Configuration) AddYumMirrors(mirrors ...string) {
 	c.yumMirrors = append(c.yumMirrors, mirrors...)
@@ -442,6 +453,7 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 		metricSets: []*metrics.Set{
 			set,
 		},
+		hosts: map[string]net.IP{},
 	}
 	cfg.topConfig = cfg
 
@@ -551,7 +563,7 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 				}
 			}
 
-			if err := configureDNS(cfg.dnses); err != nil {
+			if err := configureResolver(cfg.hosts, cfg.dnses); err != nil {
 				return err
 			}
 			if err := configureHostname(cfg.hostname); err != nil {
@@ -643,16 +655,28 @@ func configureHostname(hostname string) error {
 	return errors.WithStack(os.WriteFile("/etc/hostname", []byte(hostname+"\n"), 0o644))
 }
 
-func configureDNS(dns []net.IP) error {
+func configureResolver(hosts map[string]net.IP, dns []net.IP) error {
 	if err := os.MkdirAll("/etc", 0o755); err != nil {
 		return errors.WithStack(err)
 	}
 
-	if err := os.WriteFile("/etc/hosts",
-		[]byte(`127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
-::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
-`), 0o644); err != nil {
+	hostsF, err := os.OpenFile("/etc/hosts", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
 		return errors.WithStack(err)
+	}
+	defer hostsF.Close()
+
+	_, err = hostsF.WriteString(`127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
+`)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	for host, ip := range hosts {
+		if _, err := hostsF.WriteString(ip.String() + "   " + host + "\n"); err != nil {
+			return errors.WithStack(err)
+		}
 	}
 
 	f, err := os.OpenFile("/etc/resolv.conf", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
