@@ -3,7 +3,7 @@ module github.com/outofforest/cloudless
 go 1.25.0
 
 require (
-	github.com/VictoriaMetrics/metrics v1.41.2
+	github.com/VictoriaMetrics/metrics v1.42.0
 	github.com/beevik/ntp v1.5.0
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash v1.1.0
