@@ -91,7 +91,7 @@ func BuildEFI(ctx context.Context, deps types.DepsFunc, config Config) error {
 		return errors.WithStack(err)
 	}
 
-	const size = 200 * 1024 * 1024
+	const size = 300 * 1024 * 1024
 	b, err := file.CreateFromPath(config.Output.EFI, size)
 	if err != nil {
 		return errors.WithStack(err)
