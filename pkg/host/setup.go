@@ -553,11 +553,11 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 			if err := configureEnv(); err != nil {
 				return err
 			}
-			if err := configureMounts(ctx, cfg.mounts); err != nil {
-				return err
-			}
 
 			if cfg.isContainer {
+				if err := configureMounts(ctx, cfg.mounts); err != nil {
+					return err
+				}
 				if err := mount.ContainerRoot(); err != nil {
 					return err
 				}
@@ -596,6 +596,9 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 
 			//nolint:nestif
 			if !cfg.isContainer {
+				if err := configureMounts(ctx, cfg.mounts); err != nil {
+					return err
+				}
 				if err := installPackages(ctx, cfg.yumMirrors, cfg.packages); err != nil {
 					return err
 				}
@@ -1248,28 +1251,11 @@ func mountBlockDevice(ctx context.Context, m mountConfig) error {
 	//nolint:nestif
 	if err := syscall.Mount(m.Source, m.Target, btrfsFilesystem, 0, btrfsOptions); err != nil {
 		if _, ok := os.LookupEnv(mkfsExe); !ok {
-			dir := "/rpm/btrfs"
-			entries, err := os.ReadDir(dir)
-			if err != nil {
-				return errors.WithStack(err)
-			}
-			rpms := make([]string, 0, len(entries))
-			for _, e := range entries {
-				if e.IsDir() || !strings.HasSuffix(e.Name(), ".rpm") {
-					continue
-				}
-				rpms = append(rpms, filepath.Join(dir, e.Name()))
-			}
-			if len(rpms) == 0 {
-				return errors.New("btrfs rpms not found")
-			}
-
 			if err := libexec.Exec(ctx, exec.Command("dnf", append([]string{
 				"install", "-y",
 				"--setopt=keepcache=False",
 				"--setopt=install_weak_deps=False",
-				"--disablerepo=*",
-			}, rpms...)...,
+			}, "btrfs-progs")...,
 			)); err != nil {
 				return errors.WithStack(err)
 			}

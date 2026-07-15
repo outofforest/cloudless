@@ -24,7 +24,7 @@ func VMs(bootConfigurator vm.Configurator) cloudless.SpecSource {
 			vm.Network("cloudless-igw", "vigw1", "fc:ff:ff:fe:00:01"),
 			vm.Disk("monitoring", "vda", 20),
 		),
-		vm.Spec("cloudless-dev", 2, 1,
+		vm.Spec("cloudless-dev", 4, 2,
 			bootConfigurator,
 			vm.Network("cloudless-igw", "vigw2", "fc:ff:ff:ff:00:01"),
 			vm.Disk("dev", "vda", 20),

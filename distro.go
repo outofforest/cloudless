@@ -16,7 +16,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cavaliergopher/cpio"
 	"github.com/pkg/errors"
 	"github.com/samber/lo"
 	"github.com/sassoftware/go-rpmutils"
@@ -99,29 +98,6 @@ func buildDistro(ctx context.Context, config DistroConfig) (retConfigDir string,
 	}
 
 	if err := addModulesToDistro(ctx, config, distroDirTmp, distroWriter); err != nil {
-		return "", err
-	}
-
-	for _, pkg := range config.BtrfsPackages {
-		if err := addURLToDistro(ctx, filepath.Join("rpm", "btrfs", filepath.Base(pkg.URL)), pkg.URL, pkg.Hash, 0o400,
-			distroWriter); err != nil {
-			return "", err
-		}
-	}
-
-	initramfsF, err := os.OpenFile(initramfsPath(distroDirTmp), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	defer initramfsF.Close()
-
-	cW := gzip.NewWriter(initramfsF)
-	defer cW.Close()
-
-	w := cpio.NewWriter(cW)
-	defer w.Close()
-
-	if err := addFileToInitramfs(w, 0o600, distroPath); err != nil {
 		return "", err
 	}
 
@@ -217,32 +193,6 @@ func addFileToDistro(dstPath, srcPath string, mode os.FileMode, w *tar.Writer) e
 
 	_, err = io.Copy(w, reader)
 	return errors.WithStack(err)
-}
-
-func addURLToDistro(ctx context.Context, dstPath, srcURL, checksum string, mode os.FileMode, w *tar.Writer) error {
-	log := logger.Get(ctx)
-	log.Info("Adding file", zap.String("url", srcURL))
-
-	reader, size, err := streamFromURL(ctx, srcURL)
-	if err != nil {
-		return err
-	}
-	defer reader.Close()
-
-	if err := w.WriteHeader(&tar.Header{
-		Typeflag: tar.TypeReg,
-		Name:     dstPath,
-		Size:     size,
-		Mode:     int64(mode),
-	}); err != nil {
-		return errors.WithStack(err)
-	}
-
-	if err := copyStream(w, reader, checksum); err != nil {
-		return errors.Wrapf(err, "downloading file %q failed", srcURL)
-	}
-
-	return nil
 }
 
 func addKernelToDistro(ctx context.Context, kernelPackage Resource, path string, w *tar.Writer) error {

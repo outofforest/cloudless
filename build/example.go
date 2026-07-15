@@ -58,27 +58,6 @@ var config = cloudless.Config{
 				Hash: "sha256:cb4a5718cfbf0163cedc80a5f32a69a4f45e63f4b9e2280210ed5141412354f5",
 			},
 		},
-		BtrfsPackages: []cloudless.Resource{
-			// btrfs-progs
-			{
-				URL:  "https://mirrors.xtom.ee/fedora/updates/43/Everything/x86_64/Packages/b/btrfs-progs-6.17.1-1.fc43.x86_64.rpm",
-				Hash: "sha256:1486db4fec1b295d351a6d715a70d2a5083282276c55cf7269b05a249759564b",
-			},
-
-			// e2fsprogs-libs
-			{
-				//nolint:lll
-				URL:  "https://fedora.ip-connect.vn.ua/linux/releases/43/Everything/x86_64/os/Packages/e/e2fsprogs-libs-1.47.3-2.fc43.x86_64.rpm",
-				Hash: "sha256:5e0d2f95049fdb27dde5220d9236d773e876be8dafce7fbe11e4bce7a6146bf1",
-			},
-
-			// lzo
-			{
-				//nolint:lll
-				URL:  "https://fedora.ip-connect.vn.ua/linux/releases/43/Everything/x86_64/os/Packages/l/lzo-2.10-15.fc43.x86_64.rpm",
-				Hash: "sha256:f894657345bb319c13bd99133ecd1d340bef4257a47ced15a5d20a85e98c3ffd",
-			},
-		},
 		KernelModules: []string{
 			"vfat",
 			"tun",

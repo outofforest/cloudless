@@ -141,21 +141,11 @@ func buildInitramfs(ctx context.Context, config Config, finalInitramfsPath strin
 		return err
 	}
 
-	baseInitramfsF, err := os.Open(initramfsPath(distroDir))
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer baseInitramfsF.Close()
-
 	finalInitramfsF, err := os.OpenFile(finalInitramfsPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	defer finalInitramfsF.Close()
-
-	if _, err := io.Copy(finalInitramfsF, baseInitramfsF); err != nil {
-		return errors.WithStack(err)
-	}
 
 	cW := gzip.NewWriter(finalInitramfsF)
 	defer cW.Close()
@@ -163,6 +153,9 @@ func buildInitramfs(ctx context.Context, config Config, finalInitramfsPath strin
 	w := cpio.NewWriter(cW)
 	defer w.Close()
 
+	if err := addFileToInitramfs(w, 0o600, filepath.Join(distroDir, distroFile)); err != nil {
+		return err
+	}
 	return addFileToInitramfs(w, 0o700, config.Input.InitBin)
 }
 
