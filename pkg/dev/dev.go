@@ -16,6 +16,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/ntp"
 	"github.com/outofforest/cloudless/pkg/pebble"
 	"github.com/outofforest/cloudless/pkg/shield"
+	"github.com/outofforest/cloudless/pkg/wave"
 )
 
 const (
@@ -104,6 +105,7 @@ func devBox() host.Configurator {
 			Gateway("10.255.255.1"),
 			shield.Open("tcp4", "igw", ingress.PortHTTP),
 			ingress.Service(
+				wave.Config{},
 				ingress.Endpoint("mail",
 					ingress.Domains("mail.dev.test"),
 					ingress.Origins("http://mail.dev.test"),

@@ -28,6 +28,7 @@ func Service(appName, email string, config mailing.Config) host.Configurator {
 
 		return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 			waveClient, _, err := wave.NewClient(wave.ClientConfig{
+				CA:             config.Wave.CA,
 				Servers:        config.Wave.Servers,
 				MaxMessageSize: config.Wave.MaxMessageSize,
 			})

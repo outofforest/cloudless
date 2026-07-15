@@ -70,12 +70,12 @@ func run(ctx context.Context, config Config) error {
 		var dkimServer *dkim.Handler
 		var forwardCh chan forwardRequest
 
-		if config.EnableACME {
-			acmeServer = acme.New(config.WaveServers)
+		if config.ACMEWaveConfig != nil {
+			acmeServer = acme.New(*config.ACMEWaveConfig)
 			spawn("acme", parallel.Fail, acmeServer.Run)
 		}
-		if config.EnableACME {
-			dkimServer = dkim.New(config.WaveServers)
+		if config.DKIMWaveConfig != nil {
+			dkimServer = dkim.New(*config.DKIMWaveConfig)
 			spawn("dkim", parallel.Fail, dkimServer.Run)
 		}
 		if len(config.ForwardFor) > 0 && len(config.ForwardTo) > 0 {

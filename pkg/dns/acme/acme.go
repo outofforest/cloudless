@@ -11,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/outofforest/cloudless/pkg/dns/acme/wire"
+	cwave "github.com/outofforest/cloudless/pkg/wave"
 	"github.com/outofforest/parallel"
 	"github.com/outofforest/wave"
 )
@@ -19,17 +20,17 @@ const domainPrefix = "_acme-challenge."
 
 // Handler is the ACME handler resolving challenges.
 type Handler struct {
-	waveServers []string
+	waveConfig cwave.Config
 
 	mu         sync.Mutex
 	challenges map[string]map[[32]byte]acmeRecord
 }
 
 // New creates new ACME handler.
-func New(waveServers []string) *Handler {
+func New(waveConfig cwave.Config) *Handler {
 	return &Handler{
-		waveServers: waveServers,
-		challenges:  map[string]map[[32]byte]acmeRecord{},
+		waveConfig: waveConfig,
+		challenges: map[string]map[[32]byte]acmeRecord{},
 	}
 }
 
@@ -39,8 +40,9 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		waveClient, waveCh, err := wave.NewClient(wave.ClientConfig{
-			Servers:        h.waveServers,
-			MaxMessageSize: 1024,
+			CA:             h.waveConfig.CA,
+			Servers:        h.waveConfig.Servers,
+			MaxMessageSize: h.waveConfig.MaxMessageSize,
 			Requests: []wave.RequestConfig{
 				{
 					Marshaller: m,

@@ -13,7 +13,7 @@ import (
 type Config struct {
 	Hostname string
 	Resolver *net.Resolver
-	Wave     wave.ClientConfig
+	Wave     wave.Config
 }
 
 // DNSConfig is the DNS config of mailing.
@@ -29,7 +29,7 @@ func NewDNSConfig(dnsServers ...string) DNSConfig {
 }
 
 // NewConfig creates new mailing config.
-func NewConfig(hostname string, waveConfig wave.ClientConfig, dnsConfig DNSConfig) Config {
+func NewConfig(hostname string, waveConfig wave.Config, dnsConfig DNSConfig) Config {
 	c := Config{
 		Hostname: hostname,
 		Wave:     waveConfig,

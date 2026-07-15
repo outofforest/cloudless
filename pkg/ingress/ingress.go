@@ -7,6 +7,7 @@ import (
 	"github.com/outofforest/cloudless"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/tnet"
+	"github.com/outofforest/cloudless/pkg/wave"
 )
 
 const (
@@ -18,12 +19,13 @@ const (
 )
 
 // Service returns ingress service.
-func Service(configurators ...Configurator) host.Configurator {
+func Service(waveConfig wave.Config, configurators ...Configurator) host.Configurator {
 	return cloudless.Service("ingress", func(ctx context.Context) error {
 		serviceConfig := ServiceConfig{
 			Config: Config{
-				Endpoints: map[EndpointID]EndpointConfig{},
-				Targets:   map[EndpointID][]TargetConfig{},
+				WaveConfig: waveConfig,
+				Endpoints:  map[EndpointID]EndpointConfig{},
+				Targets:    map[EndpointID][]TargetConfig{},
 			},
 			Endpoints: map[EndpointID]ServiceEndpointConfig{},
 		}
