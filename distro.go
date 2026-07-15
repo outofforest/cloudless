@@ -16,7 +16,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cavaliergopher/cpio"
 	"github.com/pkg/errors"
 	"github.com/samber/lo"
 	"github.com/sassoftware/go-rpmutils"
@@ -102,29 +101,6 @@ func buildDistro(ctx context.Context, config DistroConfig) (retConfigDir string,
 		return "", err
 	}
 
-	for _, pkg := range config.BtrfsPackages {
-		if err := addURLToDistro(ctx, filepath.Join("rpm", "btrfs", filepath.Base(pkg.URL)), pkg.URL, pkg.Hash, 0o400,
-			distroWriter); err != nil {
-			return "", err
-		}
-	}
-
-	initramfsF, err := os.OpenFile(initramfsPath(distroDirTmp), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	defer initramfsF.Close()
-
-	cW := gzip.NewWriter(initramfsF)
-	defer cW.Close()
-
-	w := cpio.NewWriter(cW)
-	defer w.Close()
-
-	if err := addFileToInitramfs(w, 0o600, distroPath); err != nil {
-		return "", err
-	}
-
 	if err := os.Rename(distroDirTmp, distroDir); err != nil {
 		return "", errors.WithStack(err)
 	}
@@ -136,7 +112,7 @@ func distroFromBase(ctx context.Context, base Resource, path string) (retF *os.F
 	log := logger.Get(ctx)
 	log.Info("Downloading distro base", zap.String("url", base.URL))
 
-	reader, _, err := streamFromURL(ctx, base.URL)
+	reader, err := streamFromURL(ctx, base.URL)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -219,37 +195,11 @@ func addFileToDistro(dstPath, srcPath string, mode os.FileMode, w *tar.Writer) e
 	return errors.WithStack(err)
 }
 
-func addURLToDistro(ctx context.Context, dstPath, srcURL, checksum string, mode os.FileMode, w *tar.Writer) error {
-	log := logger.Get(ctx)
-	log.Info("Adding file", zap.String("url", srcURL))
-
-	reader, size, err := streamFromURL(ctx, srcURL)
-	if err != nil {
-		return err
-	}
-	defer reader.Close()
-
-	if err := w.WriteHeader(&tar.Header{
-		Typeflag: tar.TypeReg,
-		Name:     dstPath,
-		Size:     size,
-		Mode:     int64(mode),
-	}); err != nil {
-		return errors.WithStack(err)
-	}
-
-	if err := copyStream(w, reader, checksum); err != nil {
-		return errors.Wrapf(err, "downloading file %q failed", srcURL)
-	}
-
-	return nil
-}
-
 func addKernelToDistro(ctx context.Context, kernelPackage Resource, path string, w *tar.Writer) error {
 	log := logger.Get(ctx)
 	log.Info("Adding kernel module", zap.String("url", kernelPackage.URL))
 
-	reader, _, err := streamFromURL(ctx, kernelPackage.URL)
+	reader, err := streamFromURL(ctx, kernelPackage.URL)
 	if err != nil {
 		return err
 	}
@@ -362,18 +312,18 @@ func streamFromFile(path string) (retR io.ReadSeekCloser, retSize int64, retErr 
 	return f, size, nil
 }
 
-func streamFromURL(ctx context.Context, url string) (retR io.ReadCloser, retSize int64, retErr error) {
+func streamFromURL(ctx context.Context, url string) (retR io.ReadCloser, retErr error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, 0, errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, 0, errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, 0, errors.Errorf("unexpected status code %d, url: %q", resp.StatusCode, url)
+		return nil, errors.Errorf("unexpected status code %d, url: %q", resp.StatusCode, url)
 	}
 
 	defer func() {
@@ -382,7 +332,7 @@ func streamFromURL(ctx context.Context, url string) (retR io.ReadCloser, retSize
 		}
 	}()
 
-	return resp.Body, resp.ContentLength, nil
+	return resp.Body, nil
 }
 
 func copyStream(w io.Writer, r io.Reader, checksum string) error {
@@ -403,7 +353,7 @@ func downloadFile(ctx context.Context, url, path, checksum string) error {
 	log := logger.Get(ctx)
 	log.Info("Downloading file", zap.String("url", url))
 
-	reader, _, err := streamFromURL(ctx, url)
+	reader, err := streamFromURL(ctx, url)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -485,7 +435,7 @@ func downloadModulesFromPackage(
 	log := logger.Get(ctx)
 	log.Info("Downloading modules", zap.String("url", pkg.URL))
 
-	reader, _, err := streamFromURL(ctx, pkg.URL)
+	reader, err := streamFromURL(ctx, pkg.URL)
 	if err != nil {
 		return err
 	}
@@ -661,8 +611,4 @@ func distroDir(config DistroConfig) (string, error) {
 
 func kernelPath(distroDir string) string {
 	return filepath.Join(distroDir, kernelFile)
-}
-
-func initramfsPath(distroDir string) string {
-	return filepath.Join(distroDir, initramfsFile)
 }

@@ -27,7 +27,6 @@ type DistroConfig struct {
 	Base                 Resource
 	KernelPackage        Resource
 	KernelModulePackages []Resource
-	BtrfsPackages        []Resource
 	KernelModules        []string
 }
 

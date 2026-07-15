@@ -65,10 +65,10 @@ func Destroy(ctx context.Context, libvirtAddr string) error {
 func Verify(ctx context.Context, config cloudless.Config) error {
 	errs := []error{}
 
-	resources := append(append([]cloudless.Resource{
+	resources := append([]cloudless.Resource{
 		config.Distro.Base,
 		config.Distro.KernelPackage,
-	}, config.Distro.KernelModulePackages...), config.Distro.BtrfsPackages...)
+	}, config.Distro.KernelModulePackages...)
 
 	for _, r := range resources {
 		err := func() error {
