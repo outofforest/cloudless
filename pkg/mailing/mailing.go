@@ -43,13 +43,23 @@ func SendMessage(ctx context.Context, config Config, dkimConfig dnsdkim.Config, 
 	}
 
 	msg.SetMessageIDWithValue(uuid.New().String() + "@" + senderDomain)
+
+	dkimMidConfig, err := dkim.NewConfig(senderDomain, dkimConfig.Provider)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	dkimMiddleware, err := dkim.NewFromRSAKey(dkimConfig.PrivateKeyPEM, dkimMidConfig)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	msg = dkimMiddleware.Handle(msg)
 	for _, recipientStr := range recipients {
 		recipientParsed, err := netmail.ParseAddress(recipientStr)
 		if err != nil {
 			return errors.WithStack(err)
 		}
 
-		if err := send(ctx, config, dkimConfig, msg, recipientParsed.Address); err != nil {
+		if err := send(ctx, config, msg, recipientParsed.Address); err != nil {
 			return err
 		}
 	}
@@ -57,7 +67,12 @@ func SendMessage(ctx context.Context, config Config, dkimConfig dnsdkim.Config, 
 	return nil
 }
 
-func send(ctx context.Context, config Config, dkimConfig dnsdkim.Config, msg *mail.Msg, recipient string) error {
+func send(
+	ctx context.Context,
+	config Config,
+	msg *mail.Msg,
+	recipient string,
+) error {
 	domain, err := domainFromEmail(recipient)
 	if err != nil {
 		return err
@@ -67,20 +82,6 @@ func send(ctx context.Context, config Config, dkimConfig dnsdkim.Config, msg *ma
 	if err != nil {
 		return errors.WithStack(err)
 	}
-
-	// Add DKIM signing middleware to the mailer
-	dkimMidConfig, err := dkim.NewConfig(domain, dkimConfig.Provider)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	middleware, err := dkim.NewFromRSAKey(dkimConfig.PrivateKeyPEM, dkimMidConfig)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	// Apply the DKIM middleware to sign the mailer
-	msg = middleware.Handle(msg)
 
 	client, err := mail.NewClient(mxs[0].Host, mail.WithPort(25), mail.WithTLSPolicy(mail.TLSOpportunistic),
 		mail.WithHELO(config.Hostname), mail.WithDialContextFunc(dialFunc(config.Resolver)), mail.WithoutNoop())
