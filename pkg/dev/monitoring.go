@@ -17,6 +17,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/ntp"
 	"github.com/outofforest/cloudless/pkg/prometheus"
 	"github.com/outofforest/cloudless/pkg/shield"
+	"github.com/outofforest/cloudless/pkg/wave"
 )
 
 const (
@@ -99,6 +100,7 @@ func monitoringBox(metricServers []string) host.Configurator {
 			Gateway("10.255.255.1"),
 			shield.Open("tcp4", "igw", ingress.PortHTTP),
 			ingress.Service(
+				wave.Config{},
 				ingress.Endpoint("grafana",
 					ingress.Domains("grafana.mon.test"),
 					ingress.Origins("http://grafana.mon.test"),

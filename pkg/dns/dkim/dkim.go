@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/outofforest/cloudless/pkg/dns/dkim/wire"
+	cwave "github.com/outofforest/cloudless/pkg/wave"
 	"github.com/outofforest/parallel"
 	"github.com/outofforest/wave"
 )
@@ -31,17 +32,17 @@ type record struct {
 
 // Handler is the DKIM handler accepting DNS record requests.
 type Handler struct {
-	waveServers []string
+	waveConfig cwave.Config
 
 	mu      sync.Mutex
 	records map[string]record
 }
 
 // New creates new DKIM handler.
-func New(waveServers []string) *Handler {
+func New(waveConfig cwave.Config) *Handler {
 	return &Handler{
-		waveServers: waveServers,
-		records:     map[string]record{},
+		waveConfig: waveConfig,
+		records:    map[string]record{},
 	}
 }
 
@@ -51,8 +52,9 @@ func (h *Handler) Run(ctx context.Context) error {
 
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		waveClient, waveCh, err := wave.NewClient(wave.ClientConfig{
-			Servers:        h.waveServers,
-			MaxMessageSize: 1024,
+			CA:             h.waveConfig.CA,
+			Servers:        h.waveConfig.Servers,
+			MaxMessageSize: h.waveConfig.MaxMessageSize,
 			Requests: []wave.RequestConfig{
 				{
 					Marshaller: m,

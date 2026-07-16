@@ -21,10 +21,11 @@ func Address(host string) string {
 }
 
 // Service returns Wave service.
-func Service(maxMessageSize uint64, servers ...string) host.Configurator {
-	config := wave.ServerConfig{
-		MaxMessageSize: maxMessageSize,
-		Servers:        servers,
+func Service(config Config) host.Configurator {
+	serverConfig := wave.ServerConfig{
+		CA:             config.CA,
+		MaxMessageSize: config.MaxMessageSize,
+		Servers:        config.Servers,
 	}
 
 	return cloudless.Service("wave", func(ctx context.Context) error {
@@ -37,6 +38,6 @@ func Service(maxMessageSize uint64, servers ...string) host.Configurator {
 		}
 		defer ls.Close()
 
-		return wave.RunServer(ctx, ls, config)
+		return wave.RunServer(ctx, ls, serverConfig)
 	})
 }

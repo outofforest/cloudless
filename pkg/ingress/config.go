@@ -8,8 +8,7 @@ import (
 
 // Config defines configuration of HTTP HTTPIngress.
 type Config struct {
-	// WaveServers are addresses of wave servers.
-	WaveServers []string
+	WaveConfig wave.Config
 
 	// Targets defines target registrations for endpoint.
 	Targets map[EndpointID][]TargetConfig
@@ -105,15 +104,6 @@ type ServiceEndpointConfig struct {
 
 // Configurator is the function configuring ingress.
 type Configurator func(c *ServiceConfig)
-
-// Waves adds wave servers to send challenge requests to.
-func Waves(waves ...string) Configurator {
-	return func(c *ServiceConfig) {
-		for _, w := range waves {
-			c.Config.WaveServers = append(c.Config.WaveServers, wave.Address(w))
-		}
-	}
-}
 
 // EndpointConfigurator is the function configuring endpoint.
 type EndpointConfigurator func(c *ServiceEndpointConfig)

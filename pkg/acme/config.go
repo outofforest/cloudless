@@ -15,7 +15,7 @@ type Config struct {
 	AccountFile string
 	CertFile    string
 	Directory   DirectoryConfig
-	WaveServers []string
+	WaveConfig  wave.Config
 	Domains     []string
 }
 
@@ -57,15 +57,6 @@ func Pebble(host string) DirectoryConfig {
 		DirectoryURL:  tnet.JoinScheme("https", host, pebble.Port) + "/dir",
 		Insecure:      true,
 		RenewDuration: 3 * time.Minute,
-	}
-}
-
-// Waves adds wave servers to send challenge requests to.
-func Waves(waves ...string) Configurator {
-	return func(c *Config) {
-		for _, w := range waves {
-			c.WaveServers = append(c.WaveServers, wave.Address(w))
-		}
 	}
 }
 

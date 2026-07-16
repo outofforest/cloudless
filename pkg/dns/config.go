@@ -10,14 +10,13 @@ import (
 
 // Config stores dns configuration.
 type Config struct {
-	DNSPort     uint16
-	DKIMPort    uint16
-	Zones       map[string]ZoneConfig
-	ForwardTo   []net.IP
-	ForwardFor  []net.IPNet
-	EnableACME  bool
-	EnableDKIM  bool
-	WaveServers []string
+	DNSPort        uint16
+	DKIMPort       uint16
+	Zones          map[string]ZoneConfig
+	ForwardTo      []net.IP
+	ForwardFor     []net.IPNet
+	ACMEWaveConfig *wave.Config
+	DKIMWaveConfig *wave.Config
 }
 
 // ZoneConfig stores dns zone configuration.
@@ -156,24 +155,15 @@ func ForwardFor(networks ...string) Configurator {
 }
 
 // ACME enables service required to authenticate ACME certificate requests.
-func ACME() Configurator {
+func ACME(waveConfig wave.Config) Configurator {
 	return func(c *Config) {
-		c.EnableACME = true
+		c.ACMEWaveConfig = &waveConfig
 	}
 }
 
 // DKIM enables service required to create DKIM records.
-func DKIM() Configurator {
+func DKIM(waveConfig wave.Config) Configurator {
 	return func(c *Config) {
-		c.EnableDKIM = true
-	}
-}
-
-// Waves adds wave servers to send challenge requests to.
-func Waves(waves ...string) Configurator {
-	return func(c *Config) {
-		for _, w := range waves {
-			c.WaveServers = append(c.WaveServers, wave.Address(w))
-		}
+		c.DKIMWaveConfig = &waveConfig
 	}
 }

@@ -101,8 +101,9 @@ func (i *HTTPIngress) Run(ctx context.Context) error {
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		if enableHttps {
 			waveClient, waveCh, err := wave.NewClient(wave.ClientConfig{
-				Servers:        i.cfg.WaveServers,
-				MaxMessageSize: 10 * 1024,
+				CA:             i.cfg.WaveConfig.CA,
+				Servers:        i.cfg.WaveConfig.Servers,
+				MaxMessageSize: i.cfg.WaveConfig.MaxMessageSize,
 				Requests: []wave.RequestConfig{
 					{
 						Marshaller: m,

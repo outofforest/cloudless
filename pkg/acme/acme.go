@@ -25,6 +25,7 @@ import (
 	"github.com/outofforest/cloudless/pkg/acme/wire"
 	dnsacmewire "github.com/outofforest/cloudless/pkg/dns/acme/wire"
 	"github.com/outofforest/cloudless/pkg/host"
+	cwave "github.com/outofforest/cloudless/pkg/wave"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
 	"github.com/outofforest/wave"
@@ -41,7 +42,8 @@ const (
 )
 
 // Service returns new acme client service.
-func Service(appName, email string, dirConfig DirectoryConfig, configurators ...Configurator) host.Configurator {
+func Service(appName, email string, dirConfig DirectoryConfig, waveConfig cwave.Config,
+	configurators ...Configurator) host.Configurator {
 	appDir := cloudless.AppDir(appName)
 
 	return cloudless.Service("acme", func(ctx context.Context) error {
@@ -50,6 +52,7 @@ func Service(appName, email string, dirConfig DirectoryConfig, configurators ...
 			AccountFile: filepath.Join(appDir, dirConfig.Name, accountFile),
 			CertFile:    filepath.Join(appDir, dirConfig.Name, certFile),
 			Directory:   dirConfig,
+			WaveConfig:  waveConfig,
 		}
 
 		for _, configurator := range configurators {
@@ -58,9 +61,6 @@ func Service(appName, email string, dirConfig DirectoryConfig, configurators ...
 
 		if len(config.Domains) == 0 {
 			return errors.New("no domains defined")
-		}
-		if len(config.WaveServers) == 0 {
-			return errors.New("no dns acme endpoints defined")
 		}
 
 		return runACME(ctx, config)
@@ -81,8 +81,9 @@ type order struct {
 func runACME(ctx context.Context, config Config) error {
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		waveClient, _, err := wave.NewClient(wave.ClientConfig{
-			Servers:        config.WaveServers,
-			MaxMessageSize: 10 * 1024,
+			CA:             config.WaveConfig.CA,
+			Servers:        config.WaveConfig.Servers,
+			MaxMessageSize: config.WaveConfig.MaxMessageSize,
 		})
 		if err != nil {
 			return err

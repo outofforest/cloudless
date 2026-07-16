@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/samber/lo"
+
 	. "github.com/outofforest/cloudless" //nolint:staticcheck
 	"github.com/outofforest/cloudless/pkg/acme"
 	"github.com/outofforest/cloudless/pkg/acpi"
@@ -27,12 +29,16 @@ import (
 	"github.com/outofforest/cloudless/pkg/ssh"
 	"github.com/outofforest/cloudless/pkg/vlan"
 	"github.com/outofforest/cloudless/pkg/vm"
+	"github.com/outofforest/cloudless/pkg/wave"
 	"github.com/outofforest/cloudless/pkg/yum"
+	"github.com/outofforest/resonance"
 )
 
 const (
 	endpointGrafana ingress.EndpointID = "grafana"
 )
+
+var waveConfig = wave.NewConfig(lo.Must(resonance.NewCA(nil)), 10*1024, "10.255.255.2")
 
 var (
 	// Host configures hosts.
@@ -57,8 +63,8 @@ var (
 		shield.Open("udp4", "igw", dns.Port),
 		shield.Open("tcp4", "igw", dnsdkim.Port),
 		dns.Service(
-			dns.ACME(),
-			dns.DKIM(),
+			dns.ACME(waveConfig),
+			dns.DKIM(waveConfig),
 			dns.Zone("dev.onem.network", "ns1.dev.onem.network", "wojtek@exw.co", 1,
 				dns.Nameservers("ns1.dev.onem.network", "ns2.dev.onem.network"),
 				dns.Domain("ns1.dev.onem.network", "93.179.253.130"),
@@ -173,6 +179,7 @@ var deployment = Deployment(
 		shield.Open("tcp4", "igw", ingress.PortHTTP),
 		shield.Open("tcp4", "igw", ingress.PortHTTPS),
 		ingress.Service(
+			wave.Config{},
 			ingress.Endpoint(endpointGrafana,
 				ingress.Domains("dev.onem.network"),
 				ingress.Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete),
@@ -194,7 +201,7 @@ var deployment = Deployment(
 		Network("02:00:00:00:05:03", "igw", IPs("10.0.2.6/24")),
 		container.AppMount("acme"),
 		acme.Service("acme", "wojtek@exw.co", acme.LetsEncryptStaging,
-			acme.Waves("10.0.3.2", "10.0.3.3"),
+			waveConfig,
 			acme.Domains("dev.onem.network"),
 		),
 	),

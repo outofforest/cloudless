@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/samber/lo"
+
 	. "github.com/outofforest/cloudless" //nolint:staticcheck
 	"github.com/outofforest/cloudless/pkg/acme"
 	"github.com/outofforest/cloudless/pkg/container"
@@ -11,7 +13,10 @@ import (
 	"github.com/outofforest/cloudless/pkg/mailing"
 	"github.com/outofforest/cloudless/pkg/shield"
 	"github.com/outofforest/cloudless/pkg/wave"
+	"github.com/outofforest/resonance"
 )
+
+var waveConfig = wave.NewConfig(lo.Must(resonance.NewCA(nil)), 10*1024, "10.255.255.2")
 
 var HostService = Join(
 	Host("service",
@@ -40,16 +45,15 @@ var HostService = Join(
 		Network("02:00:00:00:01:02", "igw", IPs("10.255.255.2/24")),
 		Gateway("10.255.255.1"),
 		shield.Open("tcp4", "igw", wave.Port),
-		wave.Service(20*1024),
+		wave.Service(waveConfig),
 	),
 	Container("dns",
 		Network("02:00:00:00:01:03", "igw", IPs("10.255.255.3/24")),
 		Gateway("10.255.255.1"),
 		shield.Open("udp4", "igw", dns.Port),
 		dns.Service(
-			dns.Waves("10.255.255.2"),
-			dns.ACME(),
-			dns.DKIM(),
+			dns.ACME(waveConfig),
+			dns.DKIM(waveConfig),
 			dns.Zone("app.test", "ns1.app.test", "wojtek@app.test", 1,
 				dns.Nameservers("ns1.app.test"),
 				dns.MailExchange("smtp.app.test", 10),
@@ -66,8 +70,7 @@ var HostService = Join(
 		Network("02:00:00:00:01:04", "igw", IPs("10.255.255.4/24")),
 		Gateway("10.255.255.1"),
 		container.AppMount("acme"),
-		acme.Service("acme", "wojtek@exw.co", acme.Pebble(dev.PebbleAddr),
-			acme.Waves("10.255.255.2"),
+		acme.Service("acme", "wojtek@exw.co", acme.Pebble(dev.PebbleAddr), waveConfig,
 			acme.Domains("app.test", "*.app.test"),
 		),
 	),
@@ -76,7 +79,7 @@ var HostService = Join(
 		Gateway("10.255.255.1"),
 		mailer.Service("mailer", "wojtek@app.test",
 			mailing.NewConfig("mailer.app.test",
-				wave.NewClientConfig(2*1024, "10.255.255.2"),
+				waveConfig,
 				mailing.NewDNSConfig("10.255.255.3:53"),
 			),
 		),
