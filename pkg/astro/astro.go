@@ -36,7 +36,7 @@ func Container(appName string, tgz []byte) host.Configurator {
 		}),
 		container.RunImage(image,
 			container.Entrypoint("/usr/local/bin/docker-entrypoint.sh"),
-			container.Cmd("node", filepath.Join(astroDir, "dist", "server", "entry.mjs")),
+			container.Cmd("node", filepath.Join(astroDir, "server", "entry.mjs")),
 			container.EnvVar("HOST", "0.0.0.0"),
 			container.EnvVar("PORT", strconv.Itoa(Port)),
 		),
