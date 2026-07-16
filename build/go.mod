@@ -7,6 +7,7 @@ replace github.com/outofforest/cloudless => ../
 require (
 	github.com/outofforest/build/v2 v2.8.0
 	github.com/outofforest/cloudless v0.1.1
+	github.com/outofforest/resonance v0.27.0
 	github.com/outofforest/tools v1.5.0
 	github.com/samber/lo v1.52.0
 )
@@ -46,7 +47,6 @@ require (
 	github.com/outofforest/mass v0.2.1 // indirect
 	github.com/outofforest/parallel v0.2.3 // indirect
 	github.com/outofforest/proton v0.20.0 // indirect
-	github.com/outofforest/resonance v0.27.0 // indirect
 	github.com/outofforest/run v0.8.0 // indirect
 	github.com/outofforest/spin v0.3.1 // indirect
 	github.com/outofforest/varuint64 v0.1.1 // indirect
