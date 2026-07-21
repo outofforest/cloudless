@@ -3,6 +3,7 @@ package astro
 import (
 	"bytes"
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -23,8 +24,16 @@ const (
 )
 
 // Container runs astro frontend container.
-func Container(appName string, tgz []byte) host.Configurator {
+func Container(appName string, tgz []byte, configurators ...Configurator) host.Configurator {
 	astroDir := filepath.Join(cloudless.AppDir(appName), "astro")
+
+	config := Config{
+		EnvVars: map[string]string{},
+	}
+
+	for _, c := range configurators {
+		c(&config)
+	}
 
 	return cloudless.Join(
 		container.AppMount(appName),
@@ -36,9 +45,12 @@ func Container(appName string, tgz []byte) host.Configurator {
 		}),
 		container.RunImage(image,
 			container.Entrypoint("/usr/local/bin/docker-entrypoint.sh"),
-			container.Cmd("node", filepath.Join(astroDir, "server", "entry.mjs")),
+			container.Cmd("node", filepath.Join(astroDir, "dist", "server", "entry.mjs")),
 			container.EnvVar("HOST", "0.0.0.0"),
 			container.EnvVar("PORT", strconv.Itoa(Port)),
+			func(cc *container.RunImageConfig) {
+				maps.Copy(cc.EnvVars, config.EnvVars)
+			},
 		),
 	)
 }
