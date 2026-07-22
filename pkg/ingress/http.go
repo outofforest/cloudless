@@ -437,26 +437,32 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		return
-	}
-
-	buf := make([]byte, 4096)
-	for {
-		n, err := respReader.Read(buf)
-		if n > 0 {
-			if _, err := w.Write(buf[:n]); err != nil {
-				return
-			}
-			flusher.Flush()
-		}
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
+	//nolint:nestif
+	if strings.HasPrefix(contentType, "application/x-ndjson") {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
 			return
 		}
+
+		buf := make([]byte, 4096)
+		for {
+			n, err := respReader.Read(buf)
+			if n > 0 {
+				if _, err := w.Write(buf[:n]); err != nil {
+					return
+				}
+				flusher.Flush()
+			}
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return
+			}
+		}
+	} else if _, err := io.Copy(w, resp.Body); err != nil {
+		http.Error(w, "Proxy Error", http.StatusInternalServerError)
+		log.Error("Error on copying response", zap.Error(err))
 	}
 
 	if gzipWriter != nil {
