@@ -437,6 +437,7 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 
+	//nolint:nestif
 	if strings.HasPrefix(contentType, "application/x-ndjson") {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
