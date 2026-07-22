@@ -460,9 +460,10 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	} else if _, err := io.Copy(w, resp.Body); err != nil {
+	} else if _, err := io.Copy(w, respReader); err != nil {
 		http.Error(w, "Proxy Error", http.StatusInternalServerError)
 		log.Error("Error on copying response", zap.Error(err))
+		return
 	}
 
 	if gzipWriter != nil {
