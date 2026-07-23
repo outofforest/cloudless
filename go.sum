@@ -77,6 +77,8 @@ github.com/outofforest/archive v0.5.0 h1:i4qjGwpmw7wB1c0VQo5TV3cO019U7lvfJGL2P03
 github.com/outofforest/archive v0.5.0/go.mod h1:ZHLm4PQMKmHY3kM8sYqfqr46/y0jLwXcQ/IwbQM2NOw=
 github.com/outofforest/build/v2 v2.8.0 h1:TThZ3PJsDHuEt6cREfo9zc3fYA7GoUIBrbbq3VBRqQM=
 github.com/outofforest/build/v2 v2.8.0/go.mod h1:EzCI5e7zW2JzScPkIAM9H4ZVtC7rD6jtGrRZqi+AxdY=
+github.com/outofforest/go-mail v0.0.0-20260723145856-6e4bc8fb40ab h1:Md2ha6Lt/Y7jNryCrU9LnO4O4NzhYn9eJNwRym+cIVQ=
+github.com/outofforest/go-mail v0.0.0-20260723145856-6e4bc8fb40ab/go.mod h1:dWZ61zadzCIyvB4y1/YzC5O7MrbbzBfPkARmbosdf8w=
 github.com/outofforest/ioc/v2 v2.5.2 h1:4mNzLuzoZTXL/cO0qf1TrSYvejMgbZz5OUhdLzAUbek=
 github.com/outofforest/ioc/v2 v2.5.2/go.mod h1:yI+FHuHchC/t6nVo3WJ96qEgCXdHQKFI/4wW2/75YcU=
 github.com/outofforest/libexec v0.5.0 h1:r/06z211IJ6AINYda4Iue6HldziTslgL7wpbqiXPhL0=
@@ -152,8 +154,6 @@ github.com/vishvananda/netlink v1.3.1 h1:3AEMt62VKqz90r0tmNhog0r/PpWKmrEShJU0wJW
 github.com/vishvananda/netlink v1.3.1/go.mod h1:ARtKouGSTGchR8aMwmkzC0qiNPrrWO5JS/XMVl45+b4=
 github.com/vishvananda/netns v0.0.5 h1:DfiHV+j8bA32MFM7bfEunvT8IAqQ/NzSJHtcmW5zdEY=
 github.com/vishvananda/netns v0.0.5/go.mod h1:SpkAiCQRtJ6TvvxPnOSyH3BMl6unz3xZlaprSwhNNJM=
-github.com/wneessen/go-mail v0.8.1 h1:tVcncj02/QySVFw3zr/kXOzZcuFQqBNT6K+Rbgm/pcM=
-github.com/wneessen/go-mail v0.8.1/go.mod h1:dWZ61zadzCIyvB4y1/YzC5O7MrbbzBfPkARmbosdf8w=
 github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 h1:nIPpBwaJSVYIxUFsDv3M8ofmx9yWTog9BfvIu0q41lo=
 github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8/go.mod h1:HUYIGzjTL3rfEspMxjDjgmT5uz5wzYJKVo23qUhYTos=
 github.com/yuin/goldmark v1.3.5/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=

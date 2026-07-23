@@ -4,6 +4,8 @@ go 1.25.0
 
 replace github.com/outofforest/cloudless => ../
 
+replace github.com/wneessen/go-mail => github.com/outofforest/go-mail v0.0.0-20260723145856-6e4bc8fb40ab
+
 require (
 	github.com/outofforest/build/v2 v2.8.0
 	github.com/outofforest/cloudless v0.1.1

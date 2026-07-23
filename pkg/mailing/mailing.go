@@ -75,7 +75,8 @@ func send(
 	}
 
 	client, err := mail.NewClient(mxs[0].Host, mail.WithPort(25), mail.WithTLSPolicy(mail.TLSOpportunistic),
-		mail.WithHELO(config.Hostname), mail.WithDialContextFunc(dialFunc(config.Resolver)), mail.WithoutNoop())
+		mail.WithHELO(config.Hostname), mail.WithRCPTs(recipient), mail.WithDialContextFunc(dialFunc(config.Resolver)),
+		mail.WithoutNoop())
 	if err != nil {
 		return errors.WithStack(err)
 	}
