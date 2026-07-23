@@ -2,6 +2,8 @@ module github.com/outofforest/cloudless
 
 go 1.25.0
 
+replace github.com/wneessen/go-mail => github.com/outofforest/go-mail v0.0.0-20260723145856-6e4bc8fb40ab
+
 require (
 	github.com/VictoriaMetrics/metrics v1.41.2
 	github.com/beevik/ntp v1.5.0
