@@ -27,7 +27,6 @@ require (
 	github.com/elliotwutingfeng/asciiset v0.0.0-20251209210403-59ed57bd7b86 // indirect
 	github.com/emersion/go-imap v1.2.1 // indirect
 	github.com/emersion/go-message v0.18.2 // indirect
-	github.com/emersion/go-msgauth v0.7.0 // indirect
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 	github.com/emersion/go-smtp v0.24.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -64,15 +63,14 @@ require (
 	github.com/valyala/histogram v1.2.0 // indirect
 	github.com/vishvananda/netlink v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
-	github.com/wneessen/go-mail v0.7.2 // indirect
-	github.com/wneessen/go-mail-middleware v0.1.1 // indirect
+	github.com/wneessen/go-mail v0.8.1 // indirect
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/mod v0.32.0 // indirect
-	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 )

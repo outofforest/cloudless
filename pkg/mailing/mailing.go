@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/wneessen/go-mail"
-	"github.com/wneessen/go-mail-middleware/dkim"
 
 	dnsdkim "github.com/outofforest/cloudless/pkg/dns/dkim"
 )
@@ -43,16 +42,8 @@ func SendMessage(ctx context.Context, config Config, dkimConfig dnsdkim.Config, 
 	}
 
 	msg.SetMessageIDWithValue(uuid.New().String() + "@" + senderDomain)
+	msg.SetDKIM(mail.NewDKIMSigner(senderDomain, dkimConfig.Provider, dkimConfig.Signer))
 
-	dkimMidConfig, err := dkim.NewConfig(senderDomain, dkimConfig.Provider)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	dkimMiddleware, err := dkim.NewFromRSAKey(dkimConfig.PrivateKeyPEM, dkimMidConfig)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	msg = dkimMiddleware.Handle(msg)
 	for _, recipientStr := range recipients {
 		recipientParsed, err := netmail.ParseAddress(recipientStr)
 		if err != nil {

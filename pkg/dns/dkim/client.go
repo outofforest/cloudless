@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/pem"
 	"time"
 
 	"github.com/pkg/errors"
@@ -20,9 +19,8 @@ import (
 
 // Config stores DKIM config.
 type Config struct {
-	Provider      string
-	PublicKey     crypto.PublicKey
-	PrivateKeyPEM []byte
+	Provider string
+	Signer   crypto.Signer
 }
 
 // NewConfig creates new DKIM config.
@@ -32,17 +30,10 @@ func NewConfig(appName string) Config {
 
 	config := Config{
 		Provider: appName + "-" + hex.EncodeToString(timeBytes[:]),
+
+		// TODO (wojciech): Change to ED25519 once smtp servers support it finally.
+		Signer: lo.Must(rsa.GenerateKey(rand.Reader, 2048)),
 	}
-
-	// TODO (wojciech): Change to ED25519 once smtp servers support it finally.
-	privKey := lo.Must(rsa.GenerateKey(rand.Reader, 2048))
-	privKeyBytes := x509.MarshalPKCS1PrivateKey(privKey)
-
-	config.PublicKey = &privKey.PublicKey
-	config.PrivateKeyPEM = pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: privKeyBytes,
-	})
 
 	return config
 }
@@ -53,7 +44,7 @@ func RunClient(
 	waveClient *wave.Client,
 	config Config,
 ) error {
-	pubKeyMarshalled, err := x509.MarshalPKIXPublicKey(config.PublicKey)
+	pubKeyMarshalled, err := x509.MarshalPKIXPublicKey(config.Signer.Public())
 	if err != nil {
 		return errors.WithStack(err)
 	}
