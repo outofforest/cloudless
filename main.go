@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"time"
+	_ "time/tzdata" // This is imported so time.LoadLocation might work in containers.
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
