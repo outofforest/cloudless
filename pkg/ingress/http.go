@@ -323,7 +323,8 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	urlStr := url.String()
-	if !isWebsocket && r.Method == http.MethodGet {
+	if !isWebsocket && (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+		strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		e.mu.RLock()
 		content := e.cache[urlStr]
 		e.mu.RUnlock()
@@ -332,7 +333,9 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", content.ContentType)
 			w.Header().Set("Content-Encoding", "gzip")
 			w.Header().Set("Content-Length", strconv.Itoa(len(content.Content)))
-			_, _ = w.Write(content.Content)
+			if r.Method == http.MethodGet {
+				_, _ = w.Write(content.Content)
+			}
 			return
 		}
 	}
@@ -575,6 +578,12 @@ var skipHeaders = map[string]struct{}{
 	"Access-Control-Allow-Origin":  {},
 	"Access-Control-Allow-Methods": {},
 	"Access-Control-Allow-Headers": {},
+
+	// Headers not allowed in HTTP 2.
+	"Connection":        {},
+	"Keep-Alive":        {},
+	"Proxy-Connection":  {},
+	"Transfer-Encoding": {},
 }
 
 func copyHeader(dst, src http.Header) {
