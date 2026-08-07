@@ -5,7 +5,7 @@ go 1.25.0
 replace github.com/wneessen/go-mail => github.com/outofforest/go-mail v0.0.0-20260723145856-6e4bc8fb40ab
 
 require (
-	github.com/VictoriaMetrics/metrics v1.41.2
+	github.com/VictoriaMetrics/metrics v1.42.0
 	github.com/beevik/ntp v1.5.0
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash v1.1.0
