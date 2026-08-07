@@ -11,7 +11,7 @@ require (
 	github.com/outofforest/cloudless v0.1.1
 	github.com/outofforest/resonance v0.27.0
 	github.com/outofforest/tools v1.5.0
-	github.com/samber/lo v1.52.0
+	github.com/samber/lo v1.53.0
 )
 
 require (
