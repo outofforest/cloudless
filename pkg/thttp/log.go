@@ -18,10 +18,10 @@ import (
 func Log(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
-		requestID := r.Header.Get("X-Request-Id")
+		requestID := r.Header.Get("X-Request-ID")
 		if requestID == "" {
 			requestID = idgen.Random.ID()
-			r.Header.Set("X-Request-Id", requestID)
+			r.Header.Set("X-Request-ID", requestID)
 		}
 		ctx := logger.With(r.Context(),
 			zap.String("requestID", requestID),

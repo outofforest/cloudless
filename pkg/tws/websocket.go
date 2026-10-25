@@ -119,7 +119,7 @@ func Dial(ctx context.Context, url string, headers http.Header, config Config, s
 		return errors.Errorf("failed to establish WebSocket connection to %s: handshake failed: %s", url, resp.Status)
 	}
 
-	ctx = logger.With(ctx, zap.String("url", url), zap.String("requestID", resp.Header.Get("X-Request-Id")))
+	ctx = logger.With(ctx, zap.String("url", url), zap.String("requestID", resp.Header.Get("X-Request-ID")))
 	return handleSession(ctx, ws, config, sessionFn)
 }
 
@@ -127,13 +127,13 @@ func handleSession(ctx context.Context, ws *websocket.Conn, config Config, sessi
 	log := logger.Get(ctx)
 	log.Info("WebSocket established")
 
-	var pings int64 // difference between pings sent and pongs received
+	var pings atomic.Int64 // difference between pings sent and pongs received
 	incoming := make(chan []byte)
 	outgoing := make(chan []byte)
 
 	if config.RequirePong {
 		ws.SetPongHandler(func(data string) error {
-			atomic.AddInt64(&pings, -1)
+			pings.Add(-1)
 			return nil
 		})
 	}
@@ -193,7 +193,7 @@ func handleSession(ctx context.Context, ws *websocket.Conn, config Config, sessi
 						return errors.WithStack(err)
 					}
 				case <-ticks:
-					if config.RequirePong && atomic.AddInt64(&pings, 1) > 1 { // we still haven't received the previous pong
+					if config.RequirePong && pings.Add(1) > 1 { // we still haven't received the previous pong
 						return errors.New("websocket ping timeout")
 					}
 					if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {

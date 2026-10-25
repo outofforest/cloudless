@@ -98,10 +98,11 @@ func BuildEFI(ctx context.Context, deps types.DepsFunc, config Config) error {
 	}
 	defer b.Close()
 
-	fs, err := fat32.Create(b, size, 0, 0, "efi")
+	fs, err := fat32.Create(b, size, 0, 0, "efi", true)
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	defer fs.Close()
 
 	if err := fs.Mkdir("/EFI/BOOT"); err != nil {
 		return errors.WithStack(err)

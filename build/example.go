@@ -16,7 +16,7 @@ import (
 	"github.com/outofforest/tools/pkg/tools/golang"
 )
 
-// dnf download --url --arch=x86_64 kernel-core kernel-modules-core kernel-modules btrfs-progs e2fsprogs-libs lzo
+// dnf download --url --arch=x86_64 kernel-core kernel-modules-core kernel-modules
 
 var config = cloudless.Config{
 	Input: cloudless.InputConfig{

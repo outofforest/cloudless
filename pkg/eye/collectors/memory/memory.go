@@ -78,17 +78,16 @@ func New(collectInterval time.Duration) collectors.CollectorFunc {
 						return errors.WithStack(err)
 					}
 
-					pos := strings.IndexByte(line, ':')
-					if pos < 0 {
+					name, valueStr, found := strings.Cut(line, ":")
+					if !found {
 						continue
 					}
 
-					name := line[:pos]
 					if _, exists := fields[name]; !exists {
 						continue
 					}
 
-					value, err := strconv.ParseUint(strings.TrimSpace(strings.TrimSuffix(line[pos+1:], "kB\n")),
+					value, err := strconv.ParseUint(strings.TrimSpace(strings.TrimSuffix(valueStr, "kB\n")),
 						10, 64)
 					if err != nil {
 						return errors.WithStack(err)

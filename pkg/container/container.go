@@ -162,16 +162,10 @@ func RunImage(imageTag string, configurators ...RunImageConfigurator) host.Confi
 			}
 
 			for _, ev := range ic.Config.Env {
-				pos := strings.Index(ev, "=")
-				if pos < 0 {
+				evName, evValue, found := strings.Cut(ev, "=")
+				if !found || evName == "" {
 					continue
 				}
-
-				evName := strings.TrimSpace(ev[:pos])
-				if evName == "" {
-					continue
-				}
-				evValue := strings.TrimSpace(ev[pos+1:])
 				if evValue == "" {
 					delete(config.EnvVars, evName)
 					continue

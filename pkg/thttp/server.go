@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -152,10 +153,10 @@ func (s *Server) lock(next http.Handler) http.Handler {
 
 // Middleware is an Option that installs top-level middleware on the HTTP server.
 // The first middleware listed will be the first one to see the request.
-func Middleware(mw ...func(http.Handler) http.Handler) Option {
+func Middleware(mws ...func(http.Handler) http.Handler) Option {
 	return func(s *http.Server) {
-		for i := len(mw) - 1; i >= 0; i-- {
-			s.Handler = mw[i](s.Handler)
+		for _, mw := range slices.Backward(mws) {
+			s.Handler = mw(s.Handler)
 		}
 	}
 }

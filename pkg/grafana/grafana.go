@@ -12,17 +12,14 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/outofforest/cloudless"
+	"github.com/outofforest/cloudless/pkg"
 	"github.com/outofforest/cloudless/pkg/container"
 	"github.com/outofforest/cloudless/pkg/grafana/types"
 	"github.com/outofforest/cloudless/pkg/host"
 )
 
-const (
-	// Port is the port grafana listens on.
-	Port = 80
-
-	image = "grafana/grafana@sha256:d3c4a16b994e381144063ca9b0ed4900c6c25cc7697613af6d380469a095ae3e"
-)
+// Port is the port grafana listens on.
+const Port = 80
 
 var (
 	//go:embed datasources.tmpl.yaml
@@ -121,7 +118,7 @@ func Container(appName string, configurators ...Configurator) host.Configurator 
 
 			return errors.WithStack(os.MkdirAll(filepath.Join(appDir, "data"), 0o700))
 		}),
-		container.RunImage(image,
+		container.RunImage(pkg.GrafanaDockerImage,
 			container.EnvVar("GF_USERS_ALLOW_SIGN_UP", "false"),
 			container.EnvVar("GF_PATHS_PROVISIONING", filepath.Join(appDir, "provisioning")),
 			container.EnvVar("GF_PATHS_DATA", filepath.Join(appDir, "data")),
