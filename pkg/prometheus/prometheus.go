@@ -11,16 +11,13 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/outofforest/cloudless"
+	"github.com/outofforest/cloudless/pkg"
 	"github.com/outofforest/cloudless/pkg/container"
 	"github.com/outofforest/cloudless/pkg/host"
 )
 
-const (
-	// Port is the port prometheus listens on.
-	Port = 80
-
-	image = "prom/prometheus@sha256:c4c1af714765bd7e06e7ae8301610c9244686a4c02d5329ae275878e10eb481b"
-)
+// Port is the port prometheus listens on.
+const Port = 80
 
 var (
 	//go:embed config.tmpl.yaml
@@ -50,7 +47,7 @@ func Container(appName string, configurators ...Configurator) host.Configurator 
 
 			return errors.WithStack(configTemplate.Execute(f, config))
 		}),
-		container.RunImage(image,
+		container.RunImage(pkg.PrometheusDockerImage,
 			container.Cmd(
 				"--config.file", configPath,
 				"--web.listen-address", fmt.Sprintf("0.0.0.0:%d", Port),

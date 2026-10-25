@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
-	"github.com/ridge/must"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/outofforest/cloudless/pkg/test"
@@ -18,7 +18,7 @@ import (
 func testPair(t *testing.T, server, client SessionFn) error {
 	ctx := test.Context(t)
 
-	l := must.NetListener(tnet.ListenOnRandomPort(ctx, tnet.NetworkTCP))
+	l := lo.Must(tnet.ListenOnRandomPort(ctx, tnet.NetworkTCP))
 	httpServer := thttp.NewServer(l, thttp.Config{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		Serve(w, r, DefaultConfig, server)
 	})})

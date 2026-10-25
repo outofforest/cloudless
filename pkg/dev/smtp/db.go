@@ -339,9 +339,7 @@ func (m *mailbox) Expunge() error {
 	m.user.mu.Lock()
 	defer m.user.mu.Unlock()
 
-	for i := len(m.Messages) - 1; i >= 0; i-- {
-		msg := m.Messages[i]
-
+	for i, msg := range slices.Backward(m.Messages) {
 		if slices.Contains(msg.Flags, imap.DeletedFlag) {
 			m.Messages = append(m.Messages[:i], m.Messages[i+1:]...)
 		}

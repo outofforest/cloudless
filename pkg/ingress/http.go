@@ -18,7 +18,6 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
-	"github.com/ridge/must"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
@@ -430,7 +429,7 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Proxy Error", http.StatusInternalServerError)
 			log.Error("Requested redirection but Location is empty")
 			return
-		case must.Bool(regexp.MatchString("^[a-z]{1,6}://", newLocation)):
+		case lo.Must(regexp.MatchString("^[a-z]{1,6}://", newLocation)):
 		case newLocation[0] != '/':
 			newLocation = e.cfg.Path + newLocation
 		case strings.HasPrefix(newLocation, targetPath):

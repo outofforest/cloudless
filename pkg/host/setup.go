@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1422,9 +1423,9 @@ func unmount() error {
 	// If we unmount from the end of the slice, it is guaranteed that child mounts are unmounted before parents.
 	sort.Strings(mounts)
 
-	for i := len(mounts) - 1; i >= 0; i-- {
-		if err := syscall.Unmount(mounts[i], 0); err != nil {
-			return errors.Wrapf(err, "unmounting failed: %s", mounts[i])
+	for _, m := range slices.Backward(mounts) {
+		if err := syscall.Unmount(m, 0); err != nil {
+			return errors.Wrapf(err, "unmounting failed: %s", m)
 		}
 	}
 

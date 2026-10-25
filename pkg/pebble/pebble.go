@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/outofforest/cloudless"
+	"github.com/outofforest/cloudless/pkg"
 	"github.com/outofforest/cloudless/pkg/container"
 	"github.com/outofforest/cloudless/pkg/host"
 )
@@ -25,7 +26,6 @@ const (
 	// Port is the port pebble listens on.
 	Port = 14000
 
-	image      = "ghcr.io/letsencrypt/pebble@sha256:cb3ba60a6f27fbc8e1725bb286f6e82b03c57ea5d5223b5cddd6246222e26b86"
 	caCerFile  = "ca.cer"
 	caKeyFile  = "ca.key"
 	configFile = "config.json"
@@ -44,7 +44,7 @@ func Container(appName, dnsServer string) host.Configurator {
 	return cloudless.Join(
 		container.AppMount(appName),
 		cloudless.Prepare(prepareConfig(appDir), prepareCA(appDir)),
-		container.RunImage(image,
+		container.RunImage(pkg.PebbleDockerImage,
 			container.EnvVar("HOME", appDir),
 			container.EnvVar("PEBBLE_WFE_NONCEREJECT", "0"),
 			container.WorkingDir(appDir),

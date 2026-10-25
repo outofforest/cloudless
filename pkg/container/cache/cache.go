@@ -199,7 +199,7 @@ func fetchManifest(ctx context.Context, repoRoot, repoURL, imageTag string) (Man
 		switch resp.StatusCode {
 		case http.StatusUnauthorized:
 			var err error
-			authToken, err = authorize(ctx, resp.Header.Get("www-authenticate"))
+			authToken, err = authorize(ctx, resp.Header.Get("WWW-Authenticate"))
 			if err != nil {
 				return err
 			}
@@ -292,7 +292,7 @@ func fetchBlob(ctx context.Context, repoRoot, repoURL, authToken, image, digest 
 		switch resp.StatusCode {
 		case http.StatusUnauthorized:
 			var err error
-			authToken, err = authorize(ctx, resp.Header.Get("www-authenticate"))
+			authToken, err = authorize(ctx, resp.Header.Get("WWW-Authenticate"))
 			if err != nil {
 				return err
 			}
@@ -377,19 +377,17 @@ func authorize(ctx context.Context, authSetup string) (string, error) {
 }
 
 func authURL(authSetup string) (string, error) {
-	spacePos := strings.Index(authSetup, " ")
-	if spacePos < 0 {
+	authMethod, kvs, found := strings.Cut(authSetup, " ")
+	if !found {
 		return "", errors.New("invalid auth setup format")
 	}
-
-	authMethod := authSetup[:spacePos]
 	if strings.ToLower(authMethod) != "bearer" {
 		return "", errors.Errorf("unsupported auth method %q", authMethod)
 	}
 
 	var authURL string
 	first := true
-	for kv := range strings.SplitSeq(authSetup[spacePos+1:], ",") {
+	for kv := range strings.SplitSeq(kvs, ",") {
 		parts := strings.Split(kv, "=")
 		if len(parts) != 2 {
 			return "", errors.Errorf("invalid key-value %q", kv)
@@ -438,11 +436,11 @@ func sanitizeURL(url string) string {
 }
 
 func splitImageTag(imageTag string) (string, string, error) {
-	tagPos := strings.Index(imageTag, "@")
-	if tagPos < 0 {
+	image, version, found := strings.Cut(imageTag, "@")
+	if !found {
 		return "", "", errors.Errorf("invalid imageTag name %q", imageTag)
 	}
-	return imageTag[:tagPos], imageTag[tagPos+1:], nil
+	return image, version, nil
 }
 
 func buildManifestURL(repoURL, image, tag string) string {

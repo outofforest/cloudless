@@ -10,17 +10,13 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/outofforest/cloudless"
+	"github.com/outofforest/cloudless/pkg"
 	"github.com/outofforest/cloudless/pkg/container"
 	"github.com/outofforest/cloudless/pkg/host"
 )
 
-const (
-	// Port is the http port loki listens on.
-	Port = 80
-
-	// Version v3.3.2.
-	image = "grafana/loki@sha256:e9d0a18363c9c3022aef6793a7e135000d11127fb0e18b89de08b1e21e629d60"
-)
+// Port is the http port loki listens on.
+const Port = 80
 
 var (
 	//go:embed config.tmpl.yaml
@@ -51,7 +47,7 @@ func Container(appName string) host.Configurator {
 
 			return errors.WithStack(configTemplate.Execute(f, data))
 		}),
-		container.RunImage(image,
+		container.RunImage(pkg.LokiDockerImage,
 			container.Cmd(
 				"-config.file", filepath.Join(appDir, "config.tmpl.yaml"),
 			),
