@@ -9,7 +9,7 @@ const (
 	BusyboxDockerImage = "busybox@sha256:f97baa533a26513c453a362be331a43eb60214302f449c16571b23cea141dce4"
 
 	// https://hub.docker.com/r/roundcube/roundcubemail/tags
-	RoundcubeDockerImage = "roundcube/roundcubemail@sha256:4e12dc38ef81e7b7ab387b734368ed1e3045ada176f21a06fe1d0415ce2f4cdf"
+	RoundcubeDockerImage = "roundcube/roundcubemail@sha256:6fa240270f0d0fd87bacd3b35a70862b8e48aab055172e1ebcb0ae6c5db0da13"
 
 	// https://hub.docker.com/r/grafana/grafana/tags
 	GrafanaDockerImage = "grafana/grafana@sha256:c61db21dcb558e3c075098fe45ec05ebee5e2fd6861c68617c9dac7181ab24c0"

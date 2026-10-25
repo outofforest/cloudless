@@ -602,7 +602,17 @@ loop:
 				return errors.WithStack(err)
 			}
 		case header.Typeflag == tar.TypeSymlink:
-			if err := os.Symlink(header.Linkname, header.Name); err != nil {
+			err := os.Symlink(header.Linkname, header.Name)
+			switch {
+			case err == nil:
+			case os.IsExist(err):
+				if err := os.Remove(header.Name); err != nil && !os.IsNotExist(err) {
+					return errors.WithStack(err)
+				}
+				if err := os.Symlink(header.Linkname, header.Name); err != nil {
+					return errors.WithStack(err)
+				}
+			default:
 				return errors.WithStack(err)
 			}
 		case header.Typeflag == tar.TypeLink:
