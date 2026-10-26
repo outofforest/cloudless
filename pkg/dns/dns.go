@@ -3,8 +3,10 @@ package dns
 import (
 	"context"
 	"encoding/binary"
+	"math/rand"
 	"net"
 	"strings"
+	"unsafe"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -15,7 +17,6 @@ import (
 	"github.com/outofforest/cloudless/pkg/dns/dkim"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/logger"
-	"github.com/outofforest/mass"
 	"github.com/outofforest/parallel"
 )
 
@@ -23,11 +24,13 @@ const (
 	// Port is the port DNS listens on.
 	Port = 53
 
-	bufferSize          = 1500
-	defaultMaxMsgLength = 512
-	headerSize          = 12
-	ttl                 = 60
-	forwardChCapacity   = 10
+	udpBufferSize          = 1500
+	tcpBufferSize          = 4096
+	defaultMaxUDPMsgLength = 512
+	tcpLengthPrefix        = 2
+	headerSize             = 12
+	ttl                    = 60
+	forwardChCapacity      = 10
 
 	classInternet = 1
 
@@ -51,9 +54,8 @@ const (
 // Service returns DNS service.
 func Service(configurators ...Configurator) host.Configurator {
 	config := Config{
-		DNSPort:  Port,
-		DKIMPort: dkim.Port,
-		Zones:    map[string]ZoneConfig{},
+		DNSPort: Port,
+		Zones:   map[string]ZoneConfig{},
 	}
 	for _, configurator := range configurators {
 		configurator(&config)
@@ -85,27 +87,41 @@ func run(ctx context.Context, config Config) error {
 				return runForwarders(ctx, config.ForwardTo, forwardCh)
 			})
 		}
-		spawn("resolver", parallel.Fail, func(ctx context.Context) error {
+		spawn("listeners", parallel.Fail, func(ctx context.Context) error {
 			if forwardCh != nil {
 				defer close(forwardCh)
 			}
-
-			for {
-				if err := runResolver(ctx, config, forwardCh, acmeServer, dkimServer); err != nil {
-					if errors.Is(err, ctx.Err()) {
-						return err
+			return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+				spawn("udpListener", parallel.Fail, func(ctx context.Context) error {
+					for {
+						if err := runUDPListener(ctx, config, forwardCh, acmeServer, dkimServer); err != nil {
+							if errors.Is(err, ctx.Err()) {
+								return err
+							}
+							logger.Get(ctx).Error("UDP listener failed", zap.Error(err))
+						}
 					}
-					logger.Get(ctx).Error("DNS server failed", zap.Error(err))
-				}
-			}
+				})
+				spawn("udpListener", parallel.Fail, func(ctx context.Context) error {
+					for {
+						if err := runTCPListener(ctx, config, forwardCh, acmeServer, dkimServer); err != nil {
+							if errors.Is(err, ctx.Err()) {
+								return err
+							}
+							logger.Get(ctx).Error("TCP listener failed", zap.Error(err))
+						}
+					}
+				})
+
+				return nil
+			})
 		})
 
 		return nil
 	})
 }
 
-//nolint:gocyclo
-func runResolver(
+func runUDPListener(
 	ctx context.Context,
 	config Config,
 	forwardCh chan<- forwardRequest,
@@ -120,10 +136,6 @@ func runResolver(
 		return errors.WithStack(err)
 	}
 
-	if err := ipv4.NewPacketConn(conn).SetControlMessage(ipv4.FlagDst|ipv4.FlagInterface, true); err != nil {
-		return errors.WithStack(err)
-	}
-
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		spawn("watchdog", parallel.Fail, func(ctx context.Context) error {
 			<-ctx.Done()
@@ -131,15 +143,14 @@ func runResolver(
 			return errors.WithStack(ctx.Err())
 		})
 		spawn("server", parallel.Fail, func(ctx context.Context) error {
-			buff := make([]byte, bufferSize)
-			ooBuff := make([]byte, bufferSize)
-			massBuff := mass.New[byte](100 * bufferSize)
+			log := logger.Get(ctx)
 
-			var queryID uint64
-			cm := &ipv4.ControlMessage{}
+			buff := make([]byte, udpBufferSize)
+			ooBuff := make([]byte, udpBufferSize)
+			queryID := rand.Uint64()
 
-		loop:
 			for {
+				cm := &ipv4.ControlMessage{}
 				n, noob, _, addr, err := conn.ReadMsgUDP(buff, ooBuff)
 				if err != nil {
 					if ctx.Err() != nil {
@@ -152,148 +163,14 @@ func runResolver(
 				}
 				cm.Src, cm.Dst = cm.Dst, nil
 
-				h, ok := readHeader(buff[:n])
-				if !ok || h.QR || h.TC || h.QDCount == 0 || h.RCode != 0x00 || h.ANCount != 0 || h.NSCount != 0 {
-					h.RCode = rCodeFormatError
-					if err := sendError(h, addr, conn, buff, cm); err != nil {
-						return err
-					}
-					continue loop
-				}
-				if h.Opcode != 0x00 || h.QDCount > 1 {
-					h.RCode = rCodeNotImplemented
-					if err := sendError(h, addr, conn, buff, cm); err != nil {
-						return err
-					}
-					continue loop
-				}
-
-				arCount := h.ARCount
-
-				h.QR = true
-				h.AA = true
-				h.RA = h.RD && forwardCh != nil && forwardingAllowed(addr, config.ForwardFor)
-				h.QDCount = 0
-				h.ANCount = 0
-				h.NSCount = 0
-				h.ARCount = 0
-
-				q, b, ok := readQuery(buff[headerSize:n])
-				if !ok || q.QName == "" {
-					h.RCode = rCodeFormatError
-					if err := sendError(h, addr, conn, buff, cm); err != nil {
-						return err
-					}
-					continue loop
-				}
-
-				var maxMsgLength uint16 = defaultMaxMsgLength
-
-				var opt *rRecord
-				for range arCount {
-					var r rRecord
-					var ok bool
-
-					r, b, ok = readRecord(b)
-					if !ok || uint16(len(b)) < r.RDLength {
-						h.RCode = rCodeFormatError
-						if err := sendError(h, addr, conn, buff, cm); err != nil {
-							return err
-						}
-						continue loop
-					}
-					b = b[r.RDLength:]
-
-					if r.Type != typeOPT {
-						continue
-					}
-
-					if opt != nil || r.Name != "" || r.Class < defaultMaxMsgLength {
-						h.RCode = rCodeFormatError
-						if err := sendError(h, addr, conn, buff, cm); err != nil {
-							return err
-						}
-						continue loop
-					}
-
-					opt = &r
-
-					opt.TTL = 0
-					opt.RDLength = 0
-
-					if opt.Class > bufferSize {
-						opt.Class = bufferSize
-					}
-
-					maxMsgLength = opt.Class
-				}
-
-				b = putQuery(q, buff[headerSize:headerSize], &h, maxMsgLength)
-
-				if q.QClass != classInternet {
-					h.RCode = rCodeNotImplemented
-					if err := sendError(h, addr, conn, b, cm); err != nil {
-						return err
-					}
-					continue loop
-				}
-
-				q.QName = strings.ToLower(q.QName)
-				zConfig, ok := zone(q.QName, config.Zones)
-				//nolint:nestif
-				if !ok {
-					if h.RA {
-						fBuff := massBuff.NewSlice(uint64(n))
-						copy(fBuff, buff)
-						doneCh := make(chan struct{}, 1)
-						doneCh <- struct{}{}
-
-						var successCount uint64
-						for fi := range uint64(len(config.ForwardTo)) {
-							select {
-							case forwardCh <- forwardRequest{
-								ForwardIPIndex: fi,
-								Query:          fBuff,
-								Conn:           conn,
-								Address:        addr,
-								DoneCh:         doneCh,
-							}:
-								successCount++
-							default:
-							}
-						}
-						if successCount == 0 {
-							h.RCode = rCodeServerFailure
-							if err := sendError(h, addr, conn, b, cm); err != nil {
-								return err
-							}
-						}
-						continue loop
-					}
-
-					h.RCode = rCodeRefused
-					if err := sendError(h, addr, conn, b, cm); err != nil {
-						return err
-					}
-
-					continue loop
-				}
-
 				queryID++
-				b = resolve(q, zConfig, b, queryID, acmeServer, dkimServer, &h, maxMsgLength)
-
-				if opt != nil {
-					b = putRecord(*opt, b, &h, maxMsgLength)
-				}
-
-				putHeader(h, buff[:0])
-
-				if h.RCode != rCodeOK {
-					b = nil
-				}
-
-				if _, _, err := conn.WriteMsgUDP(buff[:headerSize+len(b)], cm.Marshal(), addr); err != nil {
-					return err
+				responseF := newUDPResponseFunc(conn, cm, addr)
+				resp := resolveQuery(buff[:n], addr.IP, config, queryID, forwardCh, acmeServer, dkimServer, responseF,
+					defaultMaxUDPMsgLength)
+				if resp != nil {
+					if err := responseF(resp); err != nil {
+						log.Error("Sending DNS response failed", zap.Error(err))
+					}
 				}
 			}
 		})
@@ -302,16 +179,247 @@ func runResolver(
 	})
 }
 
-func forwardingAllowed(addr *net.UDPAddr, forwardFor []net.IPNet) bool {
+func runTCPListener(
+	ctx context.Context,
+	config Config,
+	forwardCh chan<- forwardRequest,
+	acmeServer *acme.Handler,
+	dkimServer *dkim.Handler,
+) error {
+	listener, err := net.ListenTCP("tcp4", &net.TCPAddr{
+		IP:   net.IPv4zero,
+		Port: int(config.DNSPort),
+	})
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
+		spawn("watchdog", parallel.Fail, func(ctx context.Context) error {
+			<-ctx.Done()
+			_ = listener.Close()
+			return errors.WithStack(ctx.Err())
+		})
+		spawn("server", parallel.Fail, func(ctx context.Context) error {
+			log := logger.Get(ctx)
+
+			buff := make([]byte, tcpBufferSize)
+			queryID := rand.Uint64()
+
+			for {
+				conn, err := listener.AcceptTCP()
+				if err != nil {
+					if ctx.Err() != nil {
+						return errors.WithStack(ctx.Err())
+					}
+					return errors.WithStack(err)
+				}
+
+				buff, err := receiveTCPQuery(conn, buff)
+				if err != nil {
+					continue
+				}
+
+				queryID++
+				responseF := newTCPResponseFunc(conn)
+				addr := conn.RemoteAddr().(*net.TCPAddr)
+				buff = buff[tcpLengthPrefix:]
+				resp := resolveQuery(buff, addr.IP, config, queryID, forwardCh, acmeServer, dkimServer, responseF,
+					uint16(cap(buff)))
+				if resp != nil {
+					if err := responseF(resp); err != nil {
+						log.Error("Sending DNS response failed", zap.Error(err))
+					}
+				}
+			}
+		})
+
+		return nil
+	})
+}
+
+func receiveTCPQuery(conn *net.TCPConn, buff []byte) ([]byte, error) {
+	var n int
+	for n < tcpLengthPrefix {
+		nPart, err := conn.Read(buff[n:])
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		n += nPart
+	}
+
+	msgLen := int(binary.BigEndian.Uint16(buff)) + tcpLengthPrefix
+	if len(buff) < msgLen {
+		return nil, errors.New("buffer is too small")
+	}
+
+	for n < msgLen {
+		nPart, err := conn.Read(buff[n:])
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		n += nPart
+	}
+
+	return buff[:n], nil
+}
+
+type responseFunc func(resp []byte) error
+
+func newUDPResponseFunc(conn *net.UDPConn, cm *ipv4.ControlMessage, addr *net.UDPAddr) responseFunc {
+	return func(resp []byte) error {
+		_, _, err := conn.WriteMsgUDP(resp, cm.Marshal(), addr)
+		return errors.WithStack(err)
+	}
+}
+
+func newTCPResponseFunc(conn *net.TCPConn) responseFunc {
+	return func(resp []byte) error {
+		n := uint16(len(resp))
+		resp = unsafe.Slice((*byte)(unsafe.Add(unsafe.Pointer(&resp[0]), -2)), n+2)
+		binary.BigEndian.PutUint16(resp, n)
+		_, err := conn.Write(resp)
+		_ = conn.Close()
+		return errors.WithStack(err)
+	}
+}
+
+func resolveQuery(
+	buff []byte,
+	addr net.IP,
+	config Config,
+	queryID uint64,
+	forwardCh chan<- forwardRequest,
+	acmeServer *acme.Handler,
+	dkimServer *dkim.Handler,
+	responseF responseFunc,
+	maxMsgLength uint16,
+) []byte {
+	h, ok := readHeader(buff)
+	if !ok || h.QR || h.TC || h.QDCount == 0 || h.RCode != 0x00 || h.ANCount != 0 || h.NSCount != 0 {
+		h.RCode = rCodeFormatError
+		return newErrorResponse(h, buff)
+	}
+	if h.Opcode != 0x00 || h.QDCount > 1 {
+		h.RCode = rCodeNotImplemented
+		return newErrorResponse(h, buff)
+	}
+
+	arCount := h.ARCount
+
+	h.QR = true
+	h.AA = true
+	h.RA = h.RD && forwardCh != nil && isForwardingAllowed(addr, config.ForwardFor)
+	h.QDCount = 0
+	h.ANCount = 0
+	h.NSCount = 0
+	h.ARCount = 0
+
+	q, b, ok := readQuery(buff[headerSize:])
+	if !ok || q.QName == "" {
+		h.RCode = rCodeFormatError
+		return newErrorResponse(h, buff)
+	}
+
+	var opt *rRecord
+	for range arCount {
+		var r rRecord
+		var ok bool
+
+		r, b, ok = readRecord(b)
+		if !ok || uint16(len(b)) < r.RDLength {
+			h.RCode = rCodeFormatError
+			return newErrorResponse(h, buff)
+		}
+		b = b[r.RDLength:]
+
+		if r.Type != typeOPT {
+			continue
+		}
+
+		if opt != nil || r.Name != "" {
+			h.RCode = rCodeFormatError
+			return newErrorResponse(h, buff)
+		}
+
+		opt = &r
+
+		opt.TTL = 0
+		opt.RDLength = 0
+
+		if opt.Class > uint16(cap(buff)) {
+			opt.Class = uint16(cap(buff))
+		}
+
+		maxMsgLength = opt.Class
+	}
+
+	b = putQuery(q, buff[headerSize:headerSize], &h, maxMsgLength)
+
+	if q.QClass != classInternet {
+		h.RCode = rCodeNotImplemented
+		return newErrorResponse(h, buff)
+	}
+
+	q.QName = strings.ToLower(q.QName)
+	zConfig, ok := zone(q.QName, config.Zones)
+
+	if !ok {
+		if h.RA {
+			fBuff := make([]byte, len(buff)+tcpLengthPrefix)
+			copy(fBuff[tcpLengthPrefix:], buff)
+			doneCh := make(chan struct{}, 1)
+			doneCh <- struct{}{}
+
+			var successCount uint64
+			for fi := range uint64(len(config.ForwardTo)) {
+				select {
+				case forwardCh <- forwardRequest{
+					ForwardIPIndex: fi,
+					Query:          fBuff[tcpLengthPrefix:],
+					ResponseF:      responseF,
+					DoneCh:         doneCh,
+				}:
+					successCount++
+				default:
+				}
+			}
+			if successCount == 0 {
+				h.RCode = rCodeServerFailure
+				return newErrorResponse(h, buff)
+			}
+			return nil
+		}
+
+		h.RCode = rCodeRefused
+		return newErrorResponse(h, buff)
+	}
+
+	b = resolve(q, zConfig, b, queryID, acmeServer, dkimServer, &h, maxMsgLength)
+
+	if opt != nil {
+		b = putRecord(*opt, b, &h, maxMsgLength)
+	}
+
+	putHeader(h, buff[:0])
+
+	if h.RCode != rCodeOK {
+		b = nil
+	}
+
+	return buff[:headerSize+len(b)]
+}
+
+func isForwardingAllowed(addr net.IP, forwardFor []net.IPNet) bool {
 	for _, n := range forwardFor {
-		if n.Contains(addr.IP) {
+		if n.Contains(addr) {
 			return true
 		}
 	}
 	return false
 }
 
-func sendError(h header, addr *net.UDPAddr, conn *net.UDPConn, b []byte, cm *ipv4.ControlMessage) error {
+func newErrorResponse(h header, b []byte) []byte {
 	h.QR = true
 	h.AA = true
 	h.TC = false
@@ -322,8 +430,7 @@ func sendError(h header, addr *net.UDPAddr, conn *net.UDPConn, b []byte, cm *ipv
 	h.ARCount = 0
 
 	putHeader(h, b[:0])
-	_, _, err := conn.WriteMsgUDP(b[:headerSize], cm.Marshal(), addr)
-	return errors.WithStack(err)
+	return b[:headerSize]
 }
 
 //nolint:gocyclo

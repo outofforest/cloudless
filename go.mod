@@ -25,7 +25,6 @@ require (
 	github.com/outofforest/build/v2 v2.8.1
 	github.com/outofforest/libexec v0.5.1
 	github.com/outofforest/logger v0.7.1
-	github.com/outofforest/mass v0.2.2
 	github.com/outofforest/parallel v0.2.4
 	github.com/outofforest/proton v0.21.1
 	github.com/outofforest/resonance v0.27.1
@@ -58,6 +57,7 @@ require (
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/mdlayher/socket v0.8.0 // indirect
+	github.com/outofforest/mass v0.2.2 // indirect
 	github.com/outofforest/spin v0.3.1 // indirect
 	github.com/outofforest/varuint64 v0.1.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
