@@ -123,6 +123,10 @@ func (u *user) DeleteMailbox(name string) error {
 }
 
 func (u *user) RenameMailbox(existingName, newName string) error {
+	if existingName == inbox {
+		return errors.New("cannot rename inbox")
+	}
+
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
@@ -138,10 +142,7 @@ func (u *user) RenameMailbox(existingName, newName string) error {
 	}
 
 	mbox.Messages = nil
-
-	if existingName != inbox {
-		delete(u.mailboxes, existingName)
-	}
+	delete(u.mailboxes, existingName)
 
 	return nil
 }
