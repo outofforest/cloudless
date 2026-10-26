@@ -12,7 +12,6 @@ import (
 	"github.com/outofforest/cloudless/pkg/container"
 	containercache "github.com/outofforest/cloudless/pkg/container/cache"
 	"github.com/outofforest/cloudless/pkg/dns"
-	dnsdkim "github.com/outofforest/cloudless/pkg/dns/dkim"
 	"github.com/outofforest/cloudless/pkg/eye"
 	"github.com/outofforest/cloudless/pkg/grafana"
 	"github.com/outofforest/cloudless/pkg/host"
@@ -61,7 +60,6 @@ var (
 	// HostDNS configures DNS virtual machine.
 	HostDNS = ExtendBoxFactory(Host,
 		shield.Open("udp4", "igw", dns.Port),
-		shield.Open("tcp4", "igw", dnsdkim.Port),
 		dns.Service(
 			dns.ACME(waveConfig),
 			dns.DKIM(waveConfig),

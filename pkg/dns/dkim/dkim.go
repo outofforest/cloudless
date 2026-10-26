@@ -16,9 +16,6 @@ import (
 )
 
 const (
-	// Port is the port DKIM server listens on.
-	Port = 81
-
 	// RefreshInterval is the interval records should be refreshed with.
 	RefreshInterval = time.Minute
 

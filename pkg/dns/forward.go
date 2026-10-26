@@ -15,8 +15,7 @@ const numOfForwarders = 10
 type forwardRequest struct {
 	ForwardIPIndex uint64
 	Query          []byte
-	Conn           *net.UDPConn
-	Address        net.Addr
+	ResponseF      responseFunc
 	DoneCh         chan struct{}
 }
 
@@ -24,7 +23,7 @@ func runForwarders(ctx context.Context, forwardIPs []net.IP, ch <-chan forwardRe
 	return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 		for range numOfForwarders {
 			spawn("forwarder", parallel.Fail, func(ctx context.Context) error {
-				b := make([]byte, bufferSize)
+				b := make([]byte, udpBufferSize)
 				conns := make([]*net.UDPConn, 0, len(forwardIPs))
 				defer func() {
 					for _, conn := range conns {
@@ -65,7 +64,7 @@ func runForwarders(ctx context.Context, forwardIPs []net.IP, ch <-chan forwardRe
 						}
 						// Reset AA flag.
 						b[2] &= 0xfb
-						if _, err := req.Conn.WriteTo(b[:n], req.Address); err != nil {
+						if err := req.ResponseF(b[:n]); err != nil {
 							continue
 						}
 					default:
