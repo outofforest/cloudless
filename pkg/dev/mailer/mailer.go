@@ -12,13 +12,14 @@ import (
 	dnsdkim "github.com/outofforest/cloudless/pkg/dns/dkim"
 	"github.com/outofforest/cloudless/pkg/host"
 	"github.com/outofforest/cloudless/pkg/mailing"
+	cwave "github.com/outofforest/cloudless/pkg/wave"
 	"github.com/outofforest/logger"
 	"github.com/outofforest/parallel"
 	"github.com/outofforest/wave"
 )
 
 // Service returns new acme client service.
-func Service(appName, email string, config mailing.Config) host.Configurator {
+func Service(appName, email string, config mailing.Config, waveConfig cwave.Config) host.Configurator {
 	return cloudless.Service("mailer", func(ctx context.Context) error {
 		log := logger.Get(ctx)
 
@@ -28,9 +29,9 @@ func Service(appName, email string, config mailing.Config) host.Configurator {
 
 		return parallel.Run(ctx, func(ctx context.Context, spawn parallel.SpawnFn) error {
 			waveClient, _, err := wave.NewClient(wave.ClientConfig{
-				CA:             config.Wave.CA,
-				Servers:        config.Wave.Servers,
-				MaxMessageSize: config.Wave.MaxMessageSize,
+				CA:             waveConfig.CA,
+				Servers:        waveConfig.Servers,
+				MaxMessageSize: waveConfig.MaxMessageSize,
 			})
 			if err != nil {
 				return err
