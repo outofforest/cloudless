@@ -639,6 +639,25 @@ func Run(ctx context.Context, configurators ...Configurator) error {
 	}
 }
 
+// RunServices runs services.
+func RunServices(ctx context.Context, configurators ...Configurator) error {
+	cfg := &Configuration{
+		isContainer:         IsContainer(),
+		pkgRepo:             newPackageRepo(),
+		containerImagesRepo: newContainerImagesRepo(),
+		hosts:               map[string]net.IP{},
+	}
+	cfg.topConfig = cfg
+
+	for _, c := range configurators {
+		if err := c(cfg); err != nil {
+			return err
+		}
+	}
+
+	return runServices(ctx, cfg.services)
+}
+
 // ConfigureKernelModules loads kernel modules.
 func ConfigureKernelModules(kernelModules []kernel.Module) error {
 	for _, m := range kernelModules {

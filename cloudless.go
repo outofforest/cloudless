@@ -32,3 +32,8 @@ func Main(deployment ...host.Configurator) {
 		return err
 	})
 }
+
+// RunServices runs services defined in the deployment.
+func RunServices(ctx context.Context, deployment ...host.Configurator) error {
+	return host.RunServices(ctx, deployment...)
+}
