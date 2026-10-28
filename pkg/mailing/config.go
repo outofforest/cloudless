@@ -5,15 +5,12 @@ import (
 	"net"
 
 	"github.com/pkg/errors"
-
-	"github.com/outofforest/cloudless/pkg/wave"
 )
 
 // Config is the maling config.
 type Config struct {
 	Hostname string
 	Resolver *net.Resolver
-	Wave     wave.Config
 }
 
 // DNSConfig is the DNS config of mailing.
@@ -29,10 +26,9 @@ func NewDNSConfig(dnsServers ...string) DNSConfig {
 }
 
 // NewConfig creates new mailing config.
-func NewConfig(hostname string, waveConfig wave.Config, dnsConfig DNSConfig) Config {
+func NewConfig(hostname string, dnsConfig DNSConfig) Config {
 	c := Config{
 		Hostname: hostname,
-		Wave:     waveConfig,
 		Resolver: net.DefaultResolver,
 	}
 

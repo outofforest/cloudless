@@ -79,9 +79,8 @@ var HostService = Join(
 		Gateway("10.255.255.1"),
 		mailer.Service("mailer", "wojtek@app.test",
 			mailing.NewConfig("mailer.app.test",
-				waveConfig,
 				mailing.NewDNSConfig("10.255.255.3:53"),
-			),
+			), waveConfig,
 		),
 	),
 )
