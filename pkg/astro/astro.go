@@ -1,8 +1,8 @@
 package astro
 
 import (
-	"bytes"
 	"context"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -21,7 +21,7 @@ import (
 const Port = 80
 
 // Container runs astro frontend container.
-func Container(appName string, tgz []byte, configurators ...Configurator) host.Configurator {
+func Container(appName string, fs fs.FS, configurators ...Configurator) host.Configurator {
 	astroDir := filepath.Join(cloudless.AppDir(appName), "astro")
 
 	config := Config{
@@ -35,10 +35,16 @@ func Container(appName string, tgz []byte, configurators ...Configurator) host.C
 	return cloudless.Join(
 		container.AppMount(appName),
 		cloudless.Prepare(func(_ context.Context) error {
+			f, err := fs.Open("frontend.tgz")
+			if err != nil {
+				return errors.WithStack(err)
+			}
+			defer f.Close()
+
 			if err := os.RemoveAll(astroDir); err != nil && !os.IsNotExist(err) {
 				return errors.WithStack(err)
 			}
-			return archive.InflateTarGz(bytes.NewReader(tgz), astroDir)
+			return archive.InflateTarGz(f, astroDir)
 		}),
 		container.RunImage(pkg.NodeDockerImage,
 			container.Entrypoint("/usr/local/bin/docker-entrypoint.sh"),
